@@ -1,0 +1,15 @@
+{
+    "subsystem": "rockchip_products",
+    "parts": {
+        "rockchip_products": {
+            "module_list": [
+                "//device/board/hihope/${device_name}:rk3568_group",
+                "//vendor/hihope/${product_name}/bluetooth:libbt_vendor",
+                "//vendor/hihope/${product_name}/bluetooth:BCM4362A2.hcd"
+            ],
+            "test_list": [
+                "//kernel/linux/build/test:linuxkerneltest"
+            ]
+        }
+    }
+}

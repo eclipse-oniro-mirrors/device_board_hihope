@@ -1,0 +1,85 @@
+# Copyright (C) 2022 HiHope Open Source Organization .
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Kernel type, e.g. "linux", "liteos_a", "liteos_m".
+kernel_type = "liteos_m"
+
+# Kernel version.
+kernel_version = "3.0.0"
+
+# Board CPU type, e.g. "cortex-a7", "riscv32".
+board_cpu = "ck804ef"
+
+# Board arch, e.g.  "armv7-a", "rv32imac".
+board_arch = "ck803"
+
+# Toolchain name used for system compiling.
+# E.g. gcc-arm-none-eabi, arm-linux-harmonyeabi-gcc, ohos-clang,  riscv32-unknown-elf.
+# Note: The default toolchain is "ohos-clang". It's not mandatory if you use the default toolchain.
+board_toolchain = "csky-elfabiv2-gcc"
+
+#use_board_toolchain = true
+
+# The toolchain path installed, it's not mandatory if you have added toolchain path to your ~/.bashrc.
+board_toolchain_path = ""
+
+# Compiler prefix.
+board_toolchain_prefix = "csky-elfabiv2-"
+
+# Compiler type, "gcc" or "clang".
+board_toolchain_type = "gcc"
+
+# config.json parse
+if (product_path != "") {
+  product_conf = read_file("${product_path}/config.json", "json")
+  product_name = product_conf.product_name
+  bin_list = product_conf.bin_list
+}
+
+# Board related common compile flags.
+board_cflags = [
+  "-mcpu=ck804ef",
+  "-mhard-float",
+  "-DGCC_COMPILE=1",
+  "-DTLS_CONFIG_CPU_XT804=1",
+  "-DNIMBLE_FTR=1",
+  "-D__CSKY_V2__=1",
+  "-DCPU_CK804",
+  "-O2",
+  "-g3",
+  "-Wall",
+  "-ffunction-sections",
+  "-MMD",
+  "-MP",
+]
+
+board_cxx_flags = board_cflags
+
+board_asmflags = [
+  "-mcpu=ck804ef",
+  "-DCPU_CK804",
+]
+
+board_ld_flags = []
+
+# Board related headfiles search path.
+board_include_dirs = []
+
+# Board adapter dir for OHOS components.
+board_adapter_dir = ""
+
+# Sysroot path.
+board_configed_sysroot = ""
+
+# Board storage type, it used for file system generation.
+storage_type = ""
