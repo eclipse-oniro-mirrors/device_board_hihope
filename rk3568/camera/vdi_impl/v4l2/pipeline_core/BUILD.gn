@@ -1,0 +1,133 @@
+# Copyright (c) 2021 - 2023 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import("//build/ohos.gni")
+import("//device/board/${product_company}/${device_name}/device.gni")
+import("//drivers/hdf_core/adapter/uhdf2/uhdf.gni")
+import("//drivers/peripheral/camera/camera.gni")
+
+config("pipe_config") {
+  visibility = [ ":*" ]
+
+  cflags_cc = [
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-Wno-error",
+    "-DGST_DISABLE_DEPRECATED",
+    "-DHAVE_CONFIG_H",
+    "-DCOLORSPACE=\"videoconvert\"",
+    "-fno-strict-aliasing",
+    "-Wno-sign-compare",
+    "-Wno-builtin-requires-header",
+    "-Wno-unused-variable",
+    "-Wno-unused-label",
+    "-Wno-implicit-function-declaration",
+    "-Wno-format",
+    "-Wno-int-conversion",
+    "-Wno-unused-function",
+    "-Wno-thread-safety-attributes",
+    "-Wno-inconsistent-missing-override",
+    "-fno-rtti",
+    "-fno-exceptions",
+    "-ffunction-sections",
+    "-fdata-sections",
+  ]
+}
+
+ohos_shared_library("camera_pipeline_core") {
+  defines = []
+  if (drivers_peripheral_camera_feature_usb) {
+    defines += [ "CAMERA_BUILT_ON_USB" ]
+  }
+  sources = [
+    "$board_camera_path/pipeline_core/src/node/rk_codec_node.cpp",
+    "$board_camera_path/pipeline_core/src/node/rk_exif_node.cpp",
+    "$board_camera_path/pipeline_core/src/node/rk_face_node.cpp",
+    "$board_camera_path/pipeline_core/src/node/rk_scale_node.cpp",
+    "$camera_path/pipeline_core/src/pipeline_core.cpp",
+    "//device/soc/rockchip/rk3568/hardware/mpp/src/mpi_enc_utils.c",
+  ]
+  include_dirs = [
+    "../device_manager/include",
+    "//commonlibrary/c_utils/base/include",
+    "src/node",
+    "//device/soc/rockchip/rk3568/hardware/rga/include",
+    "//device/soc/rockchip/rk3568/hardware/mpp/include",
+    "//third_party/libexif",
+    "$camera_path/include",
+    "$camera_path/../interfaces",
+    "$camera_path/../v4l2/include",
+    "$camera_path/dump/include",
+  ]
+
+  deps = [
+    "$board_camera_path:config.c",
+    "$board_camera_path:params.c",
+    "$board_camera_path/device_manager:camera_device_manager",
+    "//device/soc/rockchip/rk3568/hardware/mpp:libmpp",
+    "//device/soc/rockchip/rk3568/hardware/rga:librga",
+    "//third_party/libjpeg-turbo:turbojpeg_static",
+  ]
+
+  if (is_standard_system) {
+    external_deps = [
+      "drivers_peripheral_camera:peripheral_camera_buffer_manager",
+      "drivers_peripheral_camera:peripheral_camera_device_manager",
+      "drivers_peripheral_camera:peripheral_camera_metadata_manager",
+      "drivers_peripheral_camera:peripheral_camera_pipeline_core",
+      "drivers_peripheral_camera:peripheral_camera_utils",
+      "drivers_peripheral_camera:peripheral_camera_v4l2_adapter",
+      "hdf_core:libhdf_utils",
+      "hilog:libhilog",
+    ]
+  } else {
+    external_deps = [ "hilog:libhilog" ]
+  }
+  external_deps += [
+    "c_utils:utils",
+    "drivers_interface_camera:libbuffer_producer_sequenceable_1.0",
+    "drivers_interface_camera:metadata",
+    "graphic_surface:surface",
+    "hdf_core:libhdf_host",
+    "ipc:ipc_single",
+  ]
+
+  public_configs = [ ":pipe_config" ]
+  install_images = [ chipset_base_dir ]
+  subsystem_name = "rockchip_products"
+  part_name = "rockchip_products"
+}
+
+config("example_config") {
+  visibility = [ ":*" ]
+
+  cflags = [
+    "-Wno-error",
+    "-Wno-unused-function",
+    "-Wno-unused-parameter",
+  ]
+}
+
+ohos_shared_library("camera_ipp_algo_example") {
+  sources = [ "src/ipp_algo_example/ipp_algo_example.c" ]
+
+  include_dirs = [
+    "$camera_path/pipeline_core/ipp/include",
+    "//commonlibrary/c_utils/base/include",
+  ]
+  external_deps = [ "c_utils:utils" ]
+  public_configs = [ ":example_config" ]
+  install_images = [ chipset_base_dir ]
+  subsystem_name = "rockchip_products"
+  part_name = "rockchip_products"
+}
