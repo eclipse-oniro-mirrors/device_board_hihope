@@ -1,0 +1,20 @@
+device_board_hihope
+The rk3568 directory is is dual licensed: you can use it either under the terms of the GPL V2 or the Apache License, Version 2.0., at your option.
+The rk3568/wifi is licensed under the GPL V2 License.
+The others subdirectories in wifi directory are licensed under Apache License, Version 2.0.
+The hcs,neptune100,picture,shields and others directories are licensed under Apache License, Version 2.0.
+
+(1) The directories below are licensed under Apache License, Version 2.0.
+./dayu210/bootanimation
+./dayu210/camera
+./dayu210/cfg
+./dayu210/distributedhardware
+./dayu210/kernel
+./dayu210/startup
+./dayu210/uboot
+./dayu210/updater
+
+(2) The directories below are licensed under GNU General Public License, version 2.
+./dayu210/audio_drivers
+
+As for the specific use of the licenses,  please refer to the relevant description in the documents.
