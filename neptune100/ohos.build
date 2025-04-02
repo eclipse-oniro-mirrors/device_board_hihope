@@ -1,0 +1,10 @@
+{
+  "parts": {
+    "device_neptune100": {
+      "module_list": [
+        "//device/soc/winnermicro/wm800:build_image"
+      ]
+    }
+  },
+  "subsystem": "device_neptune100"
+}
