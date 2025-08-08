@@ -1,0 +1,124 @@
+# Copyright (C) 2024 HiHope Open Source Organization .
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+enable_soc_his_sdkv100 = true
+
+# Kernel type, e.g. "linux", "liteos_a", "liteos_m".
+kernel_type = "liteos_m"
+
+# Kernel version.
+kernel_version = ""
+
+# Board CPU type, e.g. "cortex-a7", "riscv32".
+board_cpu = ""
+
+# Board arch, e.g.  "armv7-a", "rv32imac".
+board_arch = "rv32imfc"
+
+# Toolchain name used for system compiling.
+# E.g. gcc-arm-none-eabi, arm-linux-harmonyeabi-gcc, ohos-clang,  riscv32-unknown-elf.
+# Note: The default toolchain is "ohos-clang". It's not mandatory if you use the default toolchain.
+board_toolchain = "riscv32-linux-musl"
+
+# The toolchain path installed, it's not mandatory if you have added toolchain path to your ~/.bashrc.
+board_toolchain_path = ""
+
+# Compiler prefix.
+board_toolchain_prefix = "riscv32-linux-musl-"
+
+# Compiler type, "gcc" or "clang".
+board_toolchain_type = "gcc"
+
+# Board related common compile flags.
+board_cflags = [
+  "-mabi=ilp32f",
+  "-falign-functions=2",
+  "-msave-restore",
+  "-fno-optimize-strlen",
+  "-freorder-blocks-algorithm=simple",
+  "-fno-schedule-insns",
+  "-fno-inline-small-functions",
+  "-fno-inline-functions-called-once",
+  "-mtune=size",
+  "-mno-small-data-limit=0",
+  "-fno-aggressive-loop-optimizations",
+  "-std=c99",
+  "-Wpointer-arith",
+  "-Wstrict-prototypes",
+  "-ffunction-sections",
+  "-fdata-sections",
+  "-fno-exceptions",
+  "-fshort-enums",
+  "-Wextra",
+  "-Wundef",
+  "-U",
+  "PRODUCT_CFG_BUILD_TIME",
+  "-D__LITEOS__",
+  "-DCMSIS_OS_VER=2",
+  "-DLOSCFG_COMPAT_CMSIS_VER_2",
+  "-DCHIP_WS63=1",
+  "-DLOSCFG_XTS_SUPPORT",
+  "-DLWIP_CONFIG_FILE=\"lwip/lwipopts_default.h\"",
+]
+board_cxx_flags = board_cflags
+board_ld_flags = []
+
+# Board related headfiles search path.
+sdk = "sdk"
+
+board_include_dirs = [
+  "${ohos_root_path}commonlibrary/utils_lite/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/include/driver",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/include/middleware/utils",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/middleware/chips/ws63/update/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/middleware/chips/ws63/partition/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/middleware/chips/ws63/littlefs",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/middleware/utils/update/inner_include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/middleware/utils/common_headers",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/drivers/chips/ws63/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/drivers/boards/ws63/evb/memory_config/include/product",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/sdk/open_source/lwip/lwip_v2.1.3/src/include/",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/sdk/open_source/lwip/lwip_adapter/liteos_207/src/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/kernel/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/sdk/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/compat/linux/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/platform/libsec/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/lock",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/open_source/musl/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/sdk/kernel/osal/include/schedule",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/open_source/musl/arch/generic",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/open_source/musl/arch/riscv32",
+
+  "${ohos_root_path}device/soc/hisilicon/ws63v100//${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/lib/liteos_libc/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/drivers/interrupt/include",
+
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/drivers/timer/include",
+
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/targets/ws63/include",
+
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/arch/riscv/include",
+  "${ohos_root_path}/kernel/liteos_m/utils/",
+
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/compat/cmsis",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/kernel/base/include",
+  "${ohos_root_path}device/soc/hisilicon/ws63v100/${sdk}/kernel/liteos/liteos_v208.5.0/Huawei_LiteOS/open_source/CMSIS/CMSIS/RTOS2/Include",
+]
+
+# Board adapter dir for OHOS components.
+board_adapter_dir = "//device/soc/hisilicon/ws63v100/adapter"
+
+# Sysroot path.
+board_configed_sysroot = ""
+
+# Board storage type, it used for file system generation.
+storage_type = ""
