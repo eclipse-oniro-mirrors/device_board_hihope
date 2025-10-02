@@ -1,0 +1,75 @@
+#include "../../hcs/neptune100.hcs"
+root {
+    platform {
+        watchdog_config {
+            match_attr = "watchdog_config";
+            watchdogId = 0;
+        }
+        gpio_config {
+            match_attr = "gpio_config";
+            groupNum = 1;
+            pinNum = 48;
+            config = [5, 2];
+        }
+        pwm_config {
+            match_attr = "pwm_config";
+            channel = 0;
+            freq = 156250;
+        }
+        i2c_config {
+            i2c0 {
+                match_attr = "i2c0_config";
+                port = 0;
+                speed = 200000;
+                // TSP_SCL/SDA - I2C0 = PA01/PA04
+                sclPin = 1;
+                sdaPin = 4;
+            }
+        }
+        uart_config {
+        /*
+            uart0 {
+                match_attr = "uart0_config";
+                num = 0;
+                baudrate = 115200;
+                parity = 0;
+                stopBit = 1;
+                data = 8;
+            }*/
+            uart1 {
+                match_attr = "uart1_config";
+                num = 1;
+                baudrate = 115200;
+                parity = 0;
+                stopBit = 1;
+                data = 8;
+            }
+        }
+        spi_config {
+            spi0 {
+                match_attr = "spi0_config";
+                num = 0;
+                speed = 115200;
+                dataSize = 8;
+                transmode = 0;
+                mode = 0;
+                spiCsSoft = 0;
+                spiClkPin = 2;
+                spiMosiPin = 4;
+                spiMisoPin = 3;
+                spiCsPin = 4;
+            }
+        }
+    }
+    misc {
+        fs_config {
+            littlefs_config {
+                match_attr = "littlefs_config";
+                mount_points = ["/data"];
+                block_start_positions = [480];
+                block_size = [4096];
+                block_count = [20];
+            }
+        }
+    }
+}
