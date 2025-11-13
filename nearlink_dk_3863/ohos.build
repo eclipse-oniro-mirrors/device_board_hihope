@@ -1,0 +1,10 @@
+{
+  "parts": {
+    "device_nearlink_dk_3863": {
+      "module_list": [
+        "//device/soc/hisilicon/ws63v100:ws63v100"
+      ]
+    }
+  },
+  "subsystem": "device_nearlink_dk_3863"
+}
