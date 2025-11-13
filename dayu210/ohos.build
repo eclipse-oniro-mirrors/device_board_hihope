@@ -1,0 +1,18 @@
+{
+    "subsystem": "device_rk3588",
+    "parts": {
+        "device_rk3588": {
+            "module_list": [
+                "//device/board/hihope/${product_name}:dayu210_group",
+                "//vendor/hihope/${product_name}/bluetooth:libbt_vendor",
+                "//vendor/hihope/${product_name}/bluetooth:BCM4362A2.hcd",
+                "//device/board/hihope/${product_name}/camera/vdi_impl/v4l2:camera_board_vdi_impl"
+            ],
+            "test_list": [
+                "//kernel/linux/build/test:linuxkerneltest",
+                "//device/board/hihope/${product_name}/camera/vdi_impl/v4l2:camera_board_test"
+            ],
+            "inner_kits": []
+        }
+    }
+}
