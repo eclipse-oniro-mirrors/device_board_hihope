@@ -1,0 +1,10 @@
+{
+    "subsystem": "phytium_products",
+    "parts": {
+        "device_dayu300": {
+            "module_list": [
+                "//device/board/hihope/${device_name}:${device_name}_group"
+            ]
+        }
+    }
+}

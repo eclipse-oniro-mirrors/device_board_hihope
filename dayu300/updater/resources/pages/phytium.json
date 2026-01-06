@@ -1,0 +1,169 @@
+{
+    "screenWidth": 1280,
+    "screenHeight": 720,
+    "dir":"/resources/pages",
+    "pages":[
+        "menu.json",
+        "confirm.json",
+        "upd.json"
+    ],
+    "enableFoucs": true,
+    "entry":"menu:normal",
+    "strategy" : {
+        "default" : {
+            "confirmPageId" : "confirm",
+            "labelLogId" : {
+                "pageId" : "",
+                "comId" : ""
+            },
+            "labelLogResId" : {
+                "pageId" : "upd",
+                "comId" : "UpdateAutoReboot_Label"
+            },
+            "labelUpdId" : {
+                "pageId" : "",
+                "comId" : ""
+            },
+            "progressPage" : {
+                "progressPageId" : "upd:update",
+                "progressComId" : "ProgressUpdBoxDark_Progress",
+                "progressType" : "bar",
+                "logoComId" : "OHOSIconDark_Image",
+                "logoType" : "img",
+                "warningComId" : "PowerLongPressWarning_Image"
+            },
+            "resPage" : {
+                "successPageId" : "upd:updateSuccess",
+                "failPageId" : "upd:normalUpdateFailed"
+            }
+        },
+        "sdcard" : {
+            "progressPage" : {
+                "progressPageId" : "upd:sdUpdate",
+                "progressComId" : "UpdBox_Progress",
+                "progressType" : "bar",
+                "logoComId" : "OHOSIcon_Image",
+                "logoType" : "img"
+            },
+            "labelLogResId" : {
+                "pageId" : "upd",
+                "comId" : "UpdateInfoDark_Label"
+            },
+            "resPage" : {
+                "successPageId" : "upd:updateSuccess",
+                "failPageId" : "upd:updateFailedNoButton"
+            }
+        },
+        "factoryRst" : {
+            "labelLogResId" : {
+                "pageId" : "upd",
+                "comId" : "UpdateInfoDark_Label"
+            },
+            "labelUpdId" : {
+                "pageId" : "upd",
+                "comId" : "RstInfo_Label"
+            },
+            "progressPage" : {
+                "progressPageId" : "upd:reset",
+                "progressComId" : "UpdBox_Progress",
+                "progressType" : "bar",
+                "logoComId" : "OHOSIcon_Image",
+                "logoType" : "img",
+                "warningComId" : ""
+            },
+            "resPage" : {
+                "successPageId" : "upd:FactoryRstSucc",
+                "failPageId" : "upd:FactoryRstFailed"
+            }
+        },
+        "rebootFactoryRst" : {
+            "labelLogResId" : {
+                "pageId" : "upd",
+                "comId" : "RstInfo_Label"
+            },
+            "progressPage" : {
+                "progressPageId" : "upd:reset",
+                "progressComId" : "UpdBox_Progress",
+                "progressType" : "bar",
+                "logoComId" : "OHOSIcon_Image",
+                "logoType" : "img",
+                "warningComId" : ""
+            },
+            "resPage" : {
+                "successPageId" : "upd:FactoryRstSucc",
+                "failPageId" : "upd:FactoryRstFailed"
+            }
+        }
+    },
+    "locale" : {
+        "res" : [
+            {
+                "path" : "/resources/string/string.json",
+                "level" : 0
+            }
+        ],
+        "localeFile" : "/data/updater/locale"
+    },
+    "callbacks": [
+        {
+            "pageId" : "menu",
+            "comId" : "FactoryRst_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnLabelResetEvt"
+        },
+        {
+            "pageId" : "menu",
+            "comId" : "FactoryRstNormal_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnLabelResetEvt"
+        },
+        {
+            "pageId" : "menu",
+            "comId" : "Reboot_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnRebootEvt"
+        },
+        {
+            "pageId" : "menu",
+            "comId" : "RebootDevice_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnRebootEvt"
+        },
+        {
+            "pageId" : "menu:normal",
+            "comId" : "Shutdown_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnMenuShutdownEvt"
+        },
+        {
+            "pageId" : "confirm",
+            "comId" : "Cancel_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnLabelCancelEvt"
+        },
+        {
+            "pageId" : "menu:normal",
+            "comId" : "SdUpdate_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnLabelSDCardNoDelayEvt"
+        },
+        {
+            "pageId" : "confirm",
+            "comId" : "Reset_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnConfirmRstEvt"
+        },
+        {
+            "pageId" : "upd",
+            "comId" : "FailReboot_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnRebootEvt"
+        },
+        {
+            "pageId" : "upd",
+            "comId" : "ReturnToMain_Button",
+            "type" : "CLICKEVENT",
+            "func" : "OnReturnToMainEvt"
+        }
+    ]
+}

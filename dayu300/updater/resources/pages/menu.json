@@ -1,0 +1,162 @@
+{
+    "id": "menu",
+    "bgColor" : "#000000ff",
+    "subpages" : [
+        {
+            "id":"normal",
+            "coms":[
+                "OHOSIcon_Image",
+                "SdUpdate_Button",
+                "FactoryRstNormal_Button",
+                "Reboot_Button",
+                "Shutdown_Button",
+                "Usage_Label",
+                "HDCD_Info_Label",
+                "Status_IP_Label",
+                "Status_USB_Label"
+            ],
+            "bgColor" : "#f1f3f5ff"
+        }
+    ],
+    "default": {
+        "Common": {
+            "visible": false
+        },
+        "UILabel": {
+            "bgColor": "#f1f3f5ff",
+            "fontColor": "#000000e6",
+            "align" : "center",
+            "style" : "normal"
+        },
+        "UIImageView": {
+            "imgCnt" : 1,
+            "updInterval": 0,
+            "filePrefix" : ""
+        },
+        "UILabelButton": {
+            "bgColor": "#e5e7e9ff",
+            "txtColor": "#007dffff",
+            "focusedBgColor": "#007dffff",
+            "focusedTxtColor": "#ffffffff",
+            "focusable" : true
+        }
+    },
+    "coms": [
+        {
+            "type": "UIImageView",
+            "id": "OHOSIcon_Image",
+            "x": 457,
+            "y": 151,
+            "w": 320,
+            "h": 40,
+            "resPath": "/resources/images/icon/lightOUCOHlogo.png"
+        },
+        {
+            "type": "UILabelButton",
+            "id": "SdUpdate_Button",
+            "text": "[LABEL_UPDATE_FROM_SDCARD]",
+            "x": 432,
+            "y": 400,
+            "w": 416,
+            "h": 53,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "RebootDevice_Button",
+            "text": "[LABEL_REBOOT_DEVICE]",
+            "x": 432,
+            "y": 620,
+            "w": 416,
+            "h": 40,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "FactoryRstNormal_Button",
+            "text": "[LABEL_USER_DATA_RESET]",
+            "x": 432,
+            "y": 473,
+            "w": 416,
+            "h": 53,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "FactoryRst_Button",
+            "text": "[LABEL_USER_DATA_RESET]",
+            "x": 432,
+            "y": 473,
+            "w": 416,
+            "h": 53,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "Reboot_Button",
+            "text": "[LABEL_REBOOT]",
+            "x": 432,
+            "y": 547,
+            "w": 416,
+            "h": 53,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "Shutdown_Button",
+            "text": "[LABEL_SHUTDOWN]",
+            "x": 432,
+            "y": 620,
+            "w": 416,
+            "h": 53,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabel",
+            "id": "Usage_Label",
+            "text": "[LABEL_MENU_USAGE]",
+            "x": 441,
+            "y": 232,
+            "w": 397,
+            "h": 25,
+            "fontSize": 16,
+            "fontColor": "#00000099"
+        },
+        {
+            "type": "UILabel",
+            "id": "HDCD_Info_Label",
+            "text": "[LABEL_HDCD_SERVER]",
+            "x": 20,
+            "y": 620,
+            "w": 250,
+            "h": 25,
+            "fontSize": 18,
+            "align": "left",
+            "fontColor": "#000000ff"
+        },
+        {
+            "type": "UILabel",
+            "id": "Status_IP_Label",
+            "text": "[LABEL_IP]",
+            "x": 20,
+            "y": 645,
+            "w": 250,
+            "h": 25,
+            "fontSize": 16,
+            "align": "left",
+            "fontColor": "#00ff00ff"
+        },
+        {
+            "type": "UILabel",
+            "id": "Status_USB_Label",
+            "text": "[LABEL_USB]",
+            "x": 20,
+            "y": 670,
+            "w": 250,
+            "h": 25,
+            "fontSize": 16,
+            "align": "left",
+            "fontColor": "#00ff00ff"
+        }
+    ]
+}
