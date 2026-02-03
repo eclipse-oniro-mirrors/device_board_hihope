@@ -14,7 +14,7 @@
 # limitations under the License.
 
 #manual:
-#    this script is used to generate image of phytium android and openharmony product.
+#    this script is used to generate image of phytium openharmony product.
 #tools needed: 
 #    before use this script, make sure 3 tools intalled firstly. 
 #    tools: parted, mke2fs
