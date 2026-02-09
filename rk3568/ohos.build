@@ -1,0 +1,18 @@
+{
+    "subsystem": "rockchip_products",
+    "parts": {
+        "rockchip_products": {
+            "module_list": [
+                "//device/board/hihope/${device_name}:rk3568_group",
+                "//vendor/hihope/${product_name}/bluetooth:libbt_vendor",
+                "//vendor/hihope/${product_name}/bluetooth:BCM4362A2.hcd",
+                "//device/board/hihope/${device_name}/camera/vdi_impl/v4l2:camera_board_vdi_impl"
+            ],
+            "test_list": [
+                "//kernel/linux/build/test:linuxkerneltest",
+                "//device/board/hihope/${device_name}/camera/vdi_impl/v4l2:camera_board_test"
+            ],
+            "inner_kits": []
+        }
+    }
+}
