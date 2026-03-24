@@ -1,0 +1,188 @@
+{
+    "LABEL_UPDATE_FROM_SDCARD": {
+        "type": "UIString",
+        "zh":"SD卡升级",
+        "en":"Update via SD card",
+        "spa":""
+    },
+    "LABEL_REBOOT_DEVICE": {
+        "type": "UIString",
+        "zh":"重启设备",
+        "en":"Restart",
+        "spa":""
+    },
+    "LABEL_USER_DATA_RESET": {
+        "type": "UIString",
+        "zh":"恢复出厂设置",
+        "en":"Factory reset",
+        "spa":""
+    },
+    "LABEL_CLEAR_CACHE": {
+        "type": "UIString",
+        "zh":"",
+        "en":"",
+        "spa":""
+    },
+    "LABEL_REBOOT": {
+        "type": "UIString",
+        "zh":"重新启动",
+        "en":"Restart",
+        "spa":""
+    },
+    "LABEL_SAFE_MODE": {
+        "type": "UIString",
+        "zh":"",
+        "en":"",
+        "spa":""
+    },
+    "LABEL_SHUTDOWN": {
+        "type": "UIString",
+        "zh":"关机",
+        "en":"Power off",
+        "spa":""
+    },
+    "LABEL_MENU_TITLE" : {
+        "type": "UIString",
+        "zh":"系统恢复",
+        "en":"System recovery",
+        "spa":""
+    },
+    "LABEL_MENU_USAGE" : {
+        "type": "UIString",
+        "zh":"",
+        "en":"",
+        "spa":""
+    },
+    "LABEL_RESET_INFORM" : {
+        "type": "UIString",
+        "zh":"恢复完成之后用户数据将清除，请确认是否恢复出厂设置？",
+        "en":"",
+        "spa":""
+    },
+    "LABEL_RESET_CONFIRM_TITLE" : {
+        "type": "UIString",
+        "zh":"重要提醒",
+        "en":"Important",
+        "spa":""
+    },
+    "LABEL_UPD_FAIL_TIP": {
+        "type": "UIString",
+        "zh":"升级失败",
+        "en":"Software install failed",
+        "spa":""
+    },
+    "LABEL_UPD_OK_REBOOT" : {
+        "type": "UIString",
+        "zh":"设备将自动重启",
+        "en":"The device will restart",
+        "spa":""
+    },
+    "LABEL_UPD_OK_SHUTDOWN" : {
+        "type": "UIString",
+        "zh":"设备将自动关机",
+        "en":"The device will poweroff",
+        "spa":""
+    },
+    "LABEL_UPD_FAIL_REBOOT" : {
+        "type": "UIString",
+        "zh":"重启设备",
+        "en":"Restart",
+        "spa":""
+    },
+    "LABEL_UPD_SDCARD_INFO" : {
+        "type": "UIString",
+        "zh":"SD卡升级 请勿重启",
+        "en":"Updating via SD card. Do not restart the device",
+        "spa":""
+    },
+    "LABEL_RESET_PROGRESS_INFO" : {
+        "type": "UIString",
+        "zh":"工厂级恢复出厂设置...",
+        "en":"Factory reset...",
+        "spa":""
+    },
+    "LABEL_NOTE_CANCEL" : {
+        "type": "UIString",
+        "zh":"取消",
+        "en":"Go back",
+        "spa":""
+    },
+    "LABEL_UPD_OK_DONE" : {
+        "type": "UIString",
+        "zh":"升级完成",
+        "en":"",
+        "spa":""
+    },
+    "LABEL_UPD_INFO" : {
+        "type": "UIString",
+        "zh":"正在更新 请勿重启",
+        "en":"Updating...Please don't restart",
+        "spa":""
+    },
+    "LOGRES_VERIFY_FAILED" : {
+        "type": "UIString",
+        "zh":"校验失败",
+        "en":"Verification failed",
+        "spa":""
+    },
+    "LOGRES_UPDATE_FAILED" : {
+        "type": "UIString",
+        "zh":"升级失败",
+        "en":"Software install failed",
+        "spa":""
+    },
+    "LOGRES_WIPE_FINISH" : {
+        "type": "UIString",
+        "zh":"恢复出厂设置成功!",
+        "en":"Reset successful!",
+        "spa":""
+    },
+    "LOG_CLEAR_CAHCE" : {
+        "type": "UIString",
+        "zh":"",
+        "en":"",
+        "spa":""
+    },
+    "LOG_WIPE_FAIL" : {
+        "type": "UIString",
+        "zh":"恢复出厂设置失败",
+        "en":"Reset failed",
+        "spa":""
+    },
+    "LABEL_RETURN_TO_MAIN" : {
+        "type": "UIString",
+        "zh":"返回主界面",
+        "en":"Back to main screen",
+        "spa":""
+    },
+    "LABEL_DISCONNECTED" : {
+        "type": "UIString",
+        "zh":"未连接",
+        "en":"disconnected",
+        "spa":""
+    },
+    "LABEL_HDCD_SERVER" : {
+        "type": "UIString",
+        "zh":"HDCD 信息：",
+        "en":"HDCD info:",
+        "spa":""
+    },
+    "LABEL_IP" : {
+        "type": "UIString",
+        "zh":"IP",
+        "en":"IP",
+        "spa":""
+    },
+    "LABEL_USB" : {
+        "type": "UIString",
+        "zh":"USB",
+        "en":"USB",
+        "spa":""
+    },
+    "DEFAULT_STRING" : {
+        "type": "UIString",
+        "zh":"*",
+        "en":"*",
+        "spa":""
+    }
+}

@@ -1,0 +1,23 @@
+#!/bin/sh
+# Copyright (c) 2025 Phytium Technology Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+#script for udhcpc tool in get_dhcp_ip.sh
+# 当DHCP获取成功（事件为bound）时，配置IP、子网掩码
+if [ "$1" = "bound" ]; then
+    busybox ifconfig $interface $ip netmask $subnet
+    # 可选：配置网关（若DHCP返回了router参数）
+    if [ -n "$router" ]; then
+        busybox route add default gw $router dev $interface
+    fi
+fi

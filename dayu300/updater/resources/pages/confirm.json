@@ -1,0 +1,79 @@
+{
+    "id": "confirm",
+    "bgColor" : "#f1f3f5ff",
+    "default": {
+        "Common": {
+            "visible": true
+        },
+        "UILabel": {
+            "bgColor": "#f1f3f5ff",
+            "fontColor": "#000000e6",
+            "align" : "center",
+            "style" : "normal"
+        },
+        "UIImageView": {
+            "imgCnt" : 1,
+            "updInterval": 0,
+            "filePrefix" : ""
+        },
+        "UILabelButton": {
+            "bgColor": "#e5e7e9ff",
+            "txtColor": "#007dffff",
+            "focusedBgColor": "#007dffff",
+            "focusedTxtColor": "#ffffffff",
+            "focusable" : true
+        }
+    },
+    "coms": [
+        {
+            "type": "UIImageView",
+            "id": "OHOSIcon_Image",
+            "x": 240,
+            "y": 853,
+            "w": 270,
+            "h": 34,
+            "resPath": "/resources/images/icon/lightOUCOHlogo.png"
+        },
+        {
+            "type": "UILabel",
+            "id": "InformTitle_Label",
+            "text": "[LABEL_RESET_CONFIRM_TITLE]",
+            "x": 308,
+            "y": 124,
+            "w": 335,
+            "h": 21,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabel",
+            "id": "Inform_Label",
+            "text": "[LABEL_RESET_INFORM]",
+            "x": 338,
+            "y": 124,
+            "w": 335,
+            "h": 90,
+            "fontSize": 16,
+            "fontColor": "#00000099"
+        },
+        {
+            "type": "UILabelButton",
+            "id": "Cancel_Button",
+            "text": "[LABEL_NOTE_CANCEL]",
+            "x": 636,
+            "y": 107,
+            "w": 351,
+            "h": 45,
+            "fontSize": 18
+        },
+        {
+            "type": "UILabelButton",
+            "id": "Reset_Button",
+            "text": "[LABEL_USER_DATA_RESET]",
+            "x": 574,
+            "y": 107,
+            "w": 351,
+            "h": 45,
+            "fontSize": 18
+        }
+    ]
+}

@@ -1,0 +1,7 @@
+# fstab file.
+#<src>                                                  <mnt_point> <type>    <mnt_flags and options>                              <fs_mgr_flags>
+
+#SDCARD disk config
+/dev/block/mmcblk0p2           /usr        ext4     ro,barrier=1  wait,required
+/dev/block/mmcblk0p3           /vendor     ext4     ro,barrier=1  wait,required
+/dev/block/mmcblk0p4           /data       ext4     nosuid,nodev,noatime,barrier=1,data=ordered,noauto_da_alloc wait,reservedsize=104857600

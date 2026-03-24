@@ -1,0 +1,195 @@
+# Copyright (c) 2025 Phytium Technology Co., Ltd.
+# All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import("//build/ohos.gni")
+
+ohos_prebuilt_etc("init.${device_name}.cfg") {
+  source = "init.${device_name}.cfg"
+  part_name = "device_${device_name}"
+  install_images = [ chipset_base_dir ]
+  install_enable = true
+}
+
+ohos_prebuilt_etc("init.${device_name}.usb.cfg") {
+  source = "init.${device_name}.usb.cfg"
+  part_name = "device_${device_name}"
+  install_images = [ chipset_base_dir ]
+  install_enable = true
+}
+
+copy("copy_fstab_required_nvme"){
+  sources = [ "../../dayu300/cfg/fstab.nvme" ]
+  outputs = [ "$target_gen_dir/fstab.required.nvme" ]
+}
+
+copy("copy_fstab_required_sata"){
+  sources = [ "../../dayu300/cfg/fstab.sata" ]
+  outputs = [ "$target_gen_dir/fstab.required.sata" ]
+}
+
+copy("copy_fstab_required_usb"){
+  sources = [ "../../dayu300/cfg/fstab.usb" ]
+  outputs = [ "$target_gen_dir/fstab.required.usb" ]
+}
+
+copy("copy_fstab_required_sdcard"){
+  sources = [ "../../dayu300/cfg/fstab.sdcard" ]
+  outputs = [ "$target_gen_dir/fstab.required.sdcard" ]
+}
+
+ohos_prebuilt_etc("fstab.nvme") {
+  source = "../../dayu300/cfg/fstab.nvme"
+  part_name = "device_${device_name}"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+ohos_prebuilt_etc("fstab.sata") {
+  source = "../../dayu300/cfg/fstab.sata"
+  part_name = "device_${device_name}"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+ohos_prebuilt_etc("fstab.usb") {
+  source = "../../dayu300/cfg/fstab.usb"
+  part_name = "device_${device_name}"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+ohos_prebuilt_etc("fstab.sdcard") {
+  source = "../../dayu300/cfg/fstab.sdcard"
+  part_name = "device_${device_name}"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+
+
+if (enable_ramdisk) {
+  ohos_prebuilt_etc("fstab.required.nvme") {
+    source = "$target_gen_dir/fstab.required.nvme"
+    part_name = "device_${device_name}"
+    install_enable = true
+    install_images = [
+    "ramdisk",
+    ]
+    deps = [ ":copy_fstab_required_nvme" ]
+  }
+  ohos_prebuilt_etc("fstab.required.sata") {
+    source = "$target_gen_dir/fstab.required.sata"
+    part_name = "device_${device_name}"
+    install_enable = true
+    install_images = [
+    "ramdisk",
+    ]
+    deps = [ ":copy_fstab_required_sata" ]
+  }
+  ohos_prebuilt_etc("fstab.required.usb") {
+    source = "$target_gen_dir/fstab.required.usb"
+    part_name = "device_${device_name}"
+    install_enable = true
+    install_images = [
+    "ramdisk",
+    ]
+    deps = [ ":copy_fstab_required_usb" ]
+  }
+  ohos_prebuilt_etc("fstab.required.sdcard") {
+    source = "$target_gen_dir/fstab.required.sdcard"
+    part_name = "device_${device_name}"
+    install_enable = true
+    install_images = [
+    "ramdisk",
+    ]
+    deps = [ ":copy_fstab_required_sdcard" ]
+  }
+} else {
+  ohos_prebuilt_etc("fstab.required.nvme") {
+    source = "$target_gen_dir/fstab.required.nvme"
+    part_name = "device_${device_name}"
+    install_images = [ "system" ]
+    install_enable = true
+    deps = [ ":copy_fstab_required_nvme" ]
+  }
+  ohos_prebuilt_etc("fstab.required.sata") {
+    source = "$target_gen_dir/fstab.required.sata"
+    part_name = "device_${device_name}"
+    install_images = [ "system" ]
+    install_enable = true
+    deps = [ ":copy_fstab_required_sata" ]
+  }
+  ohos_prebuilt_etc("fstab.required.usb") {
+    source = "$target_gen_dir/fstab.required.usb"
+    part_name = "device_${device_name}"
+    install_images = [ "system" ]
+    install_enable = true
+    deps = [ ":copy_fstab_required_usb" ]
+  }
+  ohos_prebuilt_etc("fstab.required.sdcard") {
+    source = "$target_gen_dir/fstab.required.sdcard"
+    part_name = "device_${device_name}"
+    install_images = [ "system" ]
+    install_enable = true
+    deps = [ ":copy_fstab_required_sdcard" ]
+  }
+}
+
+ohos_prebuilt_etc("fstab.${device_name}") {
+  source = "fstab.${device_name}"
+  part_name = "device_${device_name}"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+
+if (enable_ramdisk) {
+  ohos_prebuilt_etc("fstab.required") {
+    source = "fstab.required"
+    part_name = "device_${device_name}"
+    install_enable = true
+    install_images = [
+    "ramdisk",
+    ]
+  }
+} else {
+  ohos_prebuilt_etc("fstab.required") {
+    source = "fstab.required"
+    part_name = "device_${device_name}"
+    install_images = [ "system" ]
+    install_enable = true
+  }
+}
+
+ohos_prebuilt_etc("grub_exchange_ohos.sh") {
+  source = "../../dayu300/updater/script/grub_exchange.sh"
+  part_name = "device_${device_name}"
+  output = "grub_exchange_ohos.sh"
+  install_images = [ vendor_base_dir ]
+  install_enable = true
+}
+
+group("init_configs") {
+  deps = [
+    ":fstab.required.nvme",
+    ":fstab.required.sata",
+    ":fstab.required.usb",
+    ":fstab.required.sdcard",
+    ":fstab.nvme",
+    ":fstab.sata",
+    ":fstab.usb",
+    ":fstab.sdcard",
+    ":init.${device_name}.cfg",
+    ":init.${device_name}.usb.cfg",
+    ":fstab.${device_name}",
+    ":fstab.required",
+    ":grub_exchange_ohos.sh",
+  ]
+}

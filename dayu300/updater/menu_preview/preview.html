@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>menu.json 布局预览器</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 12px; }
+    #controls { margin-bottom: 12px; }
+    #screen { position: relative; width: 1280px; height: 720px; border: 1px solid #888; background: #222; overflow: hidden; }
+  .com { position: absolute; box-sizing: border-box; border: 1px dashed rgba(0,0,0,0.2); display: flex; align-items: flex-start; justify-content: flex-start; overflow: hidden; background: transparent; }
+  .com .label-multiline { width: 100%; height: 100%; padding: 2px; display: flex; flex-direction: column; justify-content: center; }
+  .label-line { width: 100%; white-space: pre; font-family: inherit; }
+  .label-hdc-header { font-weight: bold; color: #007dff; }
+  .label-hdc-key { display: inline-block; min-width: 90px; text-align: left; }
+  .label-hdc-value { display: inline-block; text-align: left; }
+    .inspect { position: fixed; right: 12px; top: 12px; width: 320px; background: #fff; border: 1px solid #ccc; padding: 8px; font-size: 13px; }
+    label{ margin-right: 8px }
+    #scaleLabel { margin-left: 8px }
+    .img-placeholder{ width:100%; height:100%; object-fit:contain; }
+  </style>
+</head>
+<body>
+  <h3>menu.json 布局预览器</h3>
+  <div id="controls">
+    <label id="resourcePickerLabel" style="display:none">选择 resource 目录: <input id="resourceRoot" type="file" webkitdirectory directory multiple /></label>
+    <span id="resourceStatus" style="color:#c00;font-size:13px;margin-left:8px;"></span>
+    <label>页面: <select id="pageSelect"></select></label>
+    <label>缩放: <input id="scale" type="range" min="0.25" max="2" step="0.05" value="1" /> <span id="scaleLabel">1.00</span></label>
+    <label><input id="showGrid" type="checkbox" /> 显示网格</label>
+  </div>
+
+  <div id="screenWrap" style="border: 1px solid #ccc; display:inline-block; background:#ddd; padding:8px;">
+    <div id="screen"></div>
+  </div>
+
+  <div class="inspect" id="inspect">
+    <div id="info">未选择</div>
+  </div>
+
+<script>
+// 简化、可靠的 preview 脚本：支持 HTTP 自动加载（推荐）和 file 目录选择回退
+const currentJson = null;
+let currentJsonInternal = null;
+let stringsMap = {};
+let resourceMap = new Map();
+
+const pageSelect = document.getElementById('pageSelect');
+const scaleEl = document.getElementById('scale');
+const scaleLabel = document.getElementById('scaleLabel');
+const showGrid = document.getElementById('showGrid');
+const screen = document.getElementById('screen');
+
+function flattenStringsJson(obj, prefix = '', out = {}){
+  for(const k in obj){
+    if(typeof obj[k] === 'object') flattenStringsJson(obj[k], prefix + k + '.', out);
+    else out[prefix + k] = obj[k];
+  }
+  return out;
+}
+
+function translateText(s){
+  if(!s || typeof s !== 'string') return s;
+  return s.replace(/\[([^\]]+)\]/g, (m,key)=> stringsMap[key] || m);
+}
+
+function resolveResourcePath(resPath){
+  if(!resPath) return null;
+  let p = resPath.replace(/^\//, '');
+  const k = p.toLowerCase();
+  if(resourceMap.has(k)) return resourceMap.get(k);
+  for(const [key,url] of resourceMap.entries()){
+    if(key.endsWith(k)) return url;
+  }
+  const name = p.split('/').pop().toLowerCase();
+  return resourceMap.get(name) || null;
+}
+
+// render a single component object to the screen (used for independent components like HDC header)
+function renderOneComponent(c){
+  if(!c || !c.id) return;
+  const el = document.createElement('div'); el.className='com';
+  const x = (c.x !== undefined ? c.x : (c.X !== undefined ? c.X : 0));
+  const y = (c.y !== undefined ? c.y : (c.Y !== undefined ? c.Y : 0));
+  const w = (c.w !== undefined ? c.w : (c.width !== undefined ? c.width : 200));
+  const h = (c.h !== undefined ? c.h : (c.height !== undefined ? c.height : 24));
+  el.style.left = x + 'px'; el.style.top = y + 'px'; el.style.width = w + 'px'; el.style.height = h + 'px';
+  el.style.zIndex = 1000; // keep on top
+  if(c.bgColor) el.style.background = c.bgColor;
+  if(c.borderColor) el.style.borderColor = c.borderColor;
+  if((c.type||'').toLowerCase().includes('image')){
+    const img = document.createElement('img'); img.className='img-placeholder';
+    let src = c.resPath || c.respath || c.src || c.image || c.name || '';
+    if(src) img.src = resolveResourcePath(src) || src;
+    el.appendChild(img);
+  } else {
+    // treat as header/text
+    const header = document.createElement('div');
+    header.className = 'label-hdc-header';
+    header.textContent = translateText(c.text || c.title || 'HDC Info：');
+    header.style.fontSize = (c.fontSize ? Math.max(12, c.fontSize - 4) + 'px' : '12px');
+    header.style.lineHeight = '1';
+    header.style.margin = '0';
+    header.style.padding = '2px';
+    el.appendChild(header);
+  }
+  screen.appendChild(el);
+}
+
+function hexToRgba(h){ return h || '#ffffff'; }
+
+function renderPage(){
+  const val = pageSelect.value;
+  // support both schema variants: pages/components or subpages/coms
+  const pages = currentJsonInternal.pages || currentJsonInternal.subpages || [];
+  const page = pages.find(p=> (p.name===val || p.id===val) );
+  const allComs = currentJsonInternal.components || currentJsonInternal.coms || [];
+  // build id -> comp map
+  const compMap = {};
+  allComs.forEach(cc=>{ if(cc && cc.id) compMap[cc.id] = cc; });
+  // detect an independent HDC header component (id 'HDC_Header' or type contains 'hdc')
+  let hdcComp = null;
+  for(const cc of allComs){
+    if(!cc) continue;
+    const tid = (cc.id||'').toString().toLowerCase();
+    const ttype = (cc.type||'').toString().toLowerCase();
+    if(tid === 'hdc_header' || ttype.indexOf('hdc')!==-1 || tid.indexOf('hdc')!==-1){ hdcComp = cc; break; }
+  }
+  // determine components for this page
+  let comps = [];
+  if(page){
+    if(Array.isArray(page.components)) comps = page.components;
+    else if(Array.isArray(page.coms)) comps = page.coms.map(id=> compMap[id] || {}).filter(x=>x && x.id);
+  } else {
+    // fallback: use top-level components
+    comps = allComs;
+  }
+  screen.innerHTML = '';
+  screen.style.background = (page && (page.bgColor||page.bgcolor)) || (currentJsonInternal && (currentJsonInternal.bgColor||currentJsonInternal.bgcolor)) || '#222';
+  // If there's an independent HDC header component, render it first
+  if(hdcComp){
+    renderOneComponent(hdcComp);
+    // remove it from page components to avoid double-render
+    comps = comps.filter(cc => !(cc && (cc.id === hdcComp.id || cc === hdcComp)));
+  }
+
+  comps.forEach(c=>{
+    const el = document.createElement('div');
+    el.className = 'com';
+  // support x/y/w/h or x/y/width/height
+  const x = (c.x !== undefined ? c.x : (c.X !== undefined ? c.X : 0));
+  const y = (c.y !== undefined ? c.y : (c.Y !== undefined ? c.Y : 0));
+  const w = (c.w !== undefined ? c.w : (c.width !== undefined ? c.width : 100));
+  const h = (c.h !== undefined ? c.h : (c.height !== undefined ? c.height : 40));
+  el.style.left = x + 'px'; el.style.top = y + 'px';
+  el.style.width = w + 'px'; el.style.height = h + 'px';
+    if(c.bgColor) el.style.background = c.bgColor;
+    if(c.borderColor) el.style.borderColor = c.borderColor;
+    // content
+    if((c.type||'').toLowerCase().includes('image')){
+      const img = document.createElement('img'); img.className='img-placeholder';
+      let src = c.resPath || c.respath || c.src || c.image || c.name || '';
+      if(src) img.src = resolveResourcePath(src) || src;
+      el.appendChild(img);
+    } else {
+      // labels
+      const txt = document.createElement('div'); txt.style.padding='4px'; txt.style.width='100%';
+      if(c.id === 'Status_IP_Label'){
+          // Only show the original label text (IP status). HDC header is an independent component now.
+          const content = document.createElement('div');
+          content.style.whiteSpace = 'pre-line';
+          content.style.fontSize = (c.fontSize ? c.fontSize + 'px' : '14px');
+          content.style.color = c.fontColor || '';
+          content.textContent = translateText(c.text || '[LABEL_IP] [LABEL_IP_DISCONNECTED]');
+          el.appendChild(content);
+        } else if(c.id === 'Status_USB_Label'){
+          // USB label: only show USB status
+          const usb = document.createElement('div');
+          usb.textContent = translateText(c.text || '[LABEL_USB] [LABEL_USB_DISCONNECTED]');
+          usb.style.color = c.fontColor || '';
+          usb.style.whiteSpace = 'pre-line';
+          el.appendChild(usb);
+      } else {
+        txt.textContent = translateText(c.text || c.id || c.type);
+        el.appendChild(txt);
+      }
+    }
+    screen.appendChild(el);
+  });
+}
+
+function populatePageSelect(){
+  pageSelect.innerHTML='';
+  if(!currentJsonInternal) return;
+  const pages = currentJsonInternal.pages || currentJsonInternal.subpages || [];
+  pages.forEach(p=>{ const o=document.createElement('option'); o.value = (p.name || p.id); o.textContent = (p.name || p.id); pageSelect.appendChild(o); });
+  pageSelect.removeEventListener('change', renderPage);
+  pageSelect.addEventListener('change', renderPage);
+  if(pages.length) pageSelect.value = (pages[0].name || pages[0].id);
+  renderPage();
+}
+
+// 自动加载（HTTP）或回退到目录选择（file://）
+window.addEventListener('DOMContentLoaded', async ()=>{
+  const status = document.getElementById('resourceStatus');
+  const isFile = location.protocol === 'file:';
+  if(isFile){
+    status.style.color='#c00';
+    status.textContent = '通过 file:// 打开，自动加载通常被浏览器阻止。请在终端进入该目录并运行：\n  python3 -m http.server 8000\n然后在浏览器打开 http://localhost:8000/device/board/phytium/common/updater/menu_preview/preview.html\n或使用下面的资源目录选择作为回退。';
+    document.getElementById('resourcePickerLabel').style.display='inline-block';
+  } else {
+    status.textContent = '尝试通过 HTTP 自动加载 ../resources/...';
+    try{
+      const base = '../resources/';
+      const sj = await fetch(base + 'string/string.json');
+      if(!sj.ok) throw new Error('string.json HTTP ' + sj.status);
+      stringsMap = flattenStringsJson(await sj.json());
+      const mj = await fetch(base + 'pages/menu.json');
+      if(!mj.ok) throw new Error('menu.json HTTP ' + mj.status);
+      currentJsonInternal = await mj.json();
+      // collect images referenced
+      const imageExts = ['.png','.jpg','.jpeg','.gif','.svg','.webp'];
+      function collect(o,arr){ if(!o) return; for(const k in o){ if(typeof o[k]==='string' && imageExts.some(e=>o[k].toLowerCase().endsWith(e))) arr.push(o[k]); else if(typeof o[k]==='object') collect(o[k],arr);} }
+      const imgs=[]; collect(currentJsonInternal, imgs);
+      imgs.forEach(n=>{
+        // n may be '/resources/images/icon/name.png' or 'resources/images/icon/name.png' or 'icon/name.png' or just 'name.png'
+        let orig = (n || '').toString();
+        orig = orig.replace(/^\//, '');
+        // if contains 'resources/images/', take the tail after that
+        let tail = orig;
+        const marker = 'resources/images/';
+        const lower = orig.toLowerCase();
+        if(lower.indexOf(marker) !== -1) tail = orig.substring(lower.indexOf(marker) + marker.length);
+        // if contains 'images/', take tail after images/
+        else if(lower.indexOf('images/') !== -1) tail = orig.substring(lower.indexOf('images/') + 'images/'.length);
+        // build URL
+        const url = base + 'images/' + tail;
+        // map several keys to this url: full original, tail, basename
+        resourceMap.set(orig.toLowerCase(), url);
+        resourceMap.set(tail.toLowerCase(), url);
+        const baseName = tail.split('/').pop().toLowerCase();
+        resourceMap.set(baseName, url);
+      });
+      status.style.color='#080'; status.textContent = '已加载（HTTP）：menu.json & string.json；图片引用 '+imgs.length+' 张';
+      populatePageSelect();
+    }catch(err){ status.style.color='#c00'; status.textContent = 'HTTP 自动加载失败：'+err; document.getElementById('resourcePickerLabel').style.display='inline-block'; }
+  }
+});
+
+// 目录选择回退处理
+document.getElementById('resourceRoot').addEventListener('change', (ev)=>{
+  resourceMap = new Map();
+  stringsMap = {};
+  const files = Array.from(ev.target.files || []);
+  let menuF=null, strF=null; let imgs=0;
+  files.forEach(f=>{ const rel=(f.webkitRelativePath||f.name).replace(/\\/g,'/'); const rl=rel.toLowerCase(); if(rl.endsWith('/pages/menu.json')) menuF=f; else if(rl.endsWith('/string/string.json')) strF=f; else if(rl.includes('/images/')){ resourceMap.set(rel.toLowerCase(), URL.createObjectURL(f)); resourceMap.set(f.name.toLowerCase(), URL.createObjectURL(f)); imgs++; } });
+  const status = document.getElementById('resourceStatus');
+  if(strF){ const r=new FileReader(); r.onload=(e)=>{ try{ stringsMap=flattenStringsJson(JSON.parse(e.target.result)); }catch(err){ status.textContent='解析 string.json 失败: '+err; } }; r.readAsText(strF); }
+  if(menuF){ const r=new FileReader(); r.onload=(e)=>{ try{ currentJsonInternal=JSON.parse(e.target.result); populatePageSelect(); status.style.color='#080'; status.textContent='已通过目录加载 resources，图片 '+imgs+' 张'; }catch(err){ status.textContent='解析 menu.json 失败: '+err; } }; r.readAsText(menuF); }
+});
+
+// scale / grid handlers
+scaleEl.addEventListener('input', ()=>{ const s=parseFloat(scaleEl.value); scaleLabel.textContent=s.toFixed(2); screen.style.transform=`scale(${s})`; screen.style.transformOrigin='0 0'; });
+showGrid.addEventListener('change', ()=>{ if(showGrid.checked){ screen.style.backgroundImage='linear-gradient(rgba(0,0,0,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.06) 1px, transparent 1px)'; screen.style.backgroundSize='24px 24px'; } else { screen.style.backgroundImage=''; } });
+
+</script>
+</body>
+</html>

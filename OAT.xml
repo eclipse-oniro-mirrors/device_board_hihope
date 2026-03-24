@@ -56,7 +56,8 @@
                 <policyitem type="copyright" name="Huawei Device Co., Ltd." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed by Huawei Device"/>
                 <policyitem type="copyright" name="Rockchip Electronics Co., Ltd." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed By Rockchip"/>
                 <policyitem type="copyright" name="HiHope Open Source Organization ." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed By Hihope"/>
-                <policyitem type="copyright" name="Institute of Software, CAS." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed By ISCAS"/>           
+                <policyitem type="copyright" name="Institute of Software, CAS." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed By ISCAS"/>
+                <policyitem type="copyright" name="Phytium Technology Co., Ltd." path=".*" rule="may" group="defaultGroup" filefilter="copyrightPolicyFilter" desc="Developed By Phytium"/>
                 <policyitem type="license" name="GPL" path=".*" desc="linux kernel adapter codes"/>
                 <policyitem type="license" name="BSD" path=".*" desc="huawei codes"/>
 	        </policy>
@@ -76,6 +77,10 @@
                 <filteritem type="filepath" name="rk3568/updater/config/fstab.updater" desc="配置文件，不能加其他注释"/>
                 <filteritem type="filepath" name="dayu210/updater/config/fstab.updater" desc="配置文件，不能加其他注释"/>
                 <filteritem type="filename" name="*.pdf" desc="desc files"/>
+                <filteritem type="filepath" name="dayu300/cfg/fstab.*" desc="配置文件，不能加其他注释"/>
+                <filteritem type="filepath" name="dayu300/loader/*" desc="配置文件，不能加其他注释"/>
+                <filteritem type="filepath" name="dayu300/updater/*" desc="配置文件，不能加其他注释"/>
+                <filteritem type="filepath" name="dayu300/wifi/*" desc="wifi固件"/>
                 <!--filteritem type="filename" name="*.uvwxyz" desc="Describe the reason for filtering scan results"/-->
                 <!--filteritem type="filepath" name="abcdefg/.*.uvwxyz" desc="Describe the reason for filtering scan results"/-->
 		<!--filteritem type="filepath" name="projectroot/[a-zA-Z0-9]{20,}.sh" desc="Temp files"/-->
