@@ -36,8 +36,8 @@ ohos_prebuilt_etc("fstab.rk3568_plus") {
 
 group("init_configs") {
   deps = [
-    ":fstab.rk3568",
-    ":init.rk3568.cfg",
-    ":init.rk3568.usb.cfg",
+    ":fstab.rk3568_plus",
+    ":init.rk3568_plus.cfg",
+    ":init.rk3568_plus.usb.cfg",
   ]
 }
