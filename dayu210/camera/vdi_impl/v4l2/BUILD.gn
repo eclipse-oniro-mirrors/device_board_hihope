@@ -239,6 +239,7 @@ if (product_name == "rk3568_mini_system") {
       "drivers_interface_display:libdisplay_composer_proxy_1.0",
       "hitrace:hitrace_meter",
       "ipc:ipc_single",
+      "bounds_checking_function:libsec_shared"
     ]
     public_configs = [ ":camhdi_impl_config" ]
     install_images = [ chipset_base_dir ]
