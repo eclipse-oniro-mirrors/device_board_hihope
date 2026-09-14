@@ -1,0 +1,20 @@
+if (ohos_kernel_type == "liteos_m") {
+  import("//kernel/liteos_m/liteos.gni")
+  module_name = get_path_info(rebase_path("."), "name")
+  module_group(module_name) {
+    modules = [ "liteos_m" ]
+  }
+
+  # Pack the hb-built OHOS_Image.bin into a WS63 fwpkg.
+  # NOT inside module_group to avoid circular dependency:
+  #   liteos -> :kernel -> board (kernel_module) -> pack_fwpkg -> liteos
+  # Instead pulled by vendor/hihope/ws63_m:ws63_m group, which is built
+  # after the kernel targets complete.
+  build_ext_component("pack_fwpkg") {
+    exec_path = rebase_path(".", root_build_dir)
+    out_dir = rebase_path(root_out_dir)
+    command = "bash liteos_m/board/pack_fwpkg.sh $out_dir/OHOS_Image.bin $out_dir"
+    deps = [ "//kernel/liteos_m:build_kernel_image" ]
+    outputs = [ "$root_out_dir/liteos_all.fwpkg" ]
+  }
+}

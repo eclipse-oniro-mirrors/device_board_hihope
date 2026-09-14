@@ -19,5 +19,8 @@ if (ohos_kernel_type == "liteos_m") {
       "neptune100",
       "shields",
     ]
+    if (device_name == "ws63_m") {
+      modules += [ "ws63_m" ]
+    }
   }
 }
