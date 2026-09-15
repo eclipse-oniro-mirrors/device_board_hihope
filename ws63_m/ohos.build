@@ -1,0 +1,10 @@
+{
+  "parts": {
+    "device_ws63_m": {
+      "module_list": [
+        "//device/soc/hisilicon/ws63_m:ws63_m"
+      ]
+    }
+  },
+  "subsystem": "device_ws63_m"
+}
