@@ -13,6 +13,7 @@
 #include "los_task.h"
 #include "los_debug.h"
 #include "los_interrupt.h"
+#include "cmsis_os2.h"
 #include "soc.h"
 #include "pmp_init.h"
 #include "riscv_hal.h"
@@ -36,7 +37,7 @@ extern void ws63_watchdog_feed(void);
 extern unsigned int LosAppInit(VOID);
 #endif
 
-#define WDT_TIMEOUT_SEC 10
+#define WDT_TIMEOUT_SEC 60
 
 static VOID *app_task(UINT32 arg)
 {
@@ -67,7 +68,7 @@ LITE_OS_SEC_TEXT_INIT INT32 main(VOID)
     ws63_board_init();
     PRINTK("WS63 ENTER MAIN\n");
 
-    ret = LOS_KernelInit();
+    ret = osKernelInitialize();
     if (ret != LOS_OK) {
         PRINT_ERR("LOS_KernelInit failed: 0x%x\n", ret);
         while (1) {}
@@ -114,7 +115,7 @@ LITE_OS_SEC_TEXT_INIT INT32 main(VOID)
 
     ws63_watchdog_init(WDT_TIMEOUT_SEC, 0);
 
-    LOS_Start();
+    osKernelStart();
 
     while (1) {}
     return 0;

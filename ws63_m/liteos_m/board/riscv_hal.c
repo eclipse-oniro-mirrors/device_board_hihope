@@ -14,11 +14,13 @@
  */
 
 /*
- * RISC-V HAL for WS63 — wraps libinterrupt.a (himideerv200 PLIC, CSR-based).
+ * RISC-V HAL for WS63 — wraps the himideerv200 PLIC source driver
+ * (kernel/liteos_m/drivers/interrupt/riscv_himideerv200_plic.c).
  *
  * All PLIC hardware operations (enable/disable/priority/clear/get) are
- * delegated to libinterrupt.a, which uses himideerv200 custom CSRs
- * (cipri=0x7ED, prithd=0xBFE) instead of SiFive-style memory-mapped registers.
+ * CSR-based (himideerv200 custom CSRs: LOCIPRI=0xBC0+, LOCIEN=0xBE0+,
+ * LOCIPCLR=0xBF0, PRITHD=0xBFE) — no SiFive-style memory-mapped
+ * registers. Formerly this wrapped the prebuilt libinterrupt.a.
  */
 
 #include "riscv_hal.h"
@@ -57,11 +59,6 @@ VOID HalIrqEnable(UINT32 vector)
     } else {
         HalIrqUnmask(vector);
     }
-}
-
-VOID HalSetLocalInterPri(UINT32 interPriNum, UINT16 prior)
-{
-    HalIrqSetPrio(interPriNum, prior);
 }
 
 BOOL HalBackTraceFpCheck(UINT32 value)
