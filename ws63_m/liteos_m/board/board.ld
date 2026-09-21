@@ -52,6 +52,32 @@ SECTIONS
         *(.rodata.*)
     } > PROGRAM_STARTUP
 
+    /* .init_array / .fini_array: function-pointer tables emitted by GCC for
+     * C++ static ctors/dtors and (when LOSCFG_TEST_KERNEL_COVERAGE=y) the
+     * gcov per-TU constructors that register gcov_info. Read-only, placed
+     * in flash alongside .startup; TEST_GcovRunConstructors() iterates
+     * .init_array.
+     *
+     * GNU ld scripts have no conditional compilation, so these sections
+     * cannot be macro-gated. Without instrumentation they are empty (zero
+     * size, no section headers in the ELF, __init_array_start == end) and
+     * byte-identical output has been verified against a pristine build;
+     * test_gcov.c also declares the bound symbols weak with a NULL guard,
+     * so linking stays safe on boards whose script lacks these sections. */
+    .init_array : ALIGN(4) {
+        __init_array_start = .;
+        KEEP(*(.init_array))
+        KEEP(*(.init_array.*))
+        __init_array_end = .;
+    } > PROGRAM_STARTUP
+
+    .fini_array : ALIGN(4) {
+        __fini_array_start = .;
+        KEEP(*(.fini_array))
+        KEEP(*(.fini_array.*))
+        __fini_array_end = .;
+    } > PROGRAM_STARTUP
+
     .data : ALIGN(8) {
         __data_load_start = LOADADDR(.data);
         __data_start = .;

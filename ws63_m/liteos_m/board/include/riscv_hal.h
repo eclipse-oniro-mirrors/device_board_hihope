@@ -33,7 +33,6 @@ extern CHAR *__bss_end;
 
 extern VOID HalIrqDisable(UINT32 vector);
 extern VOID HalIrqEnable(UINT32 vector);
-extern VOID HalSetLocalInterPri(UINT32 vector, UINT16 prior);
 
 extern VOID HalGetSysCpuCycle(UINT32 *cntHi, UINT32 *cntLo);
 extern VOID HalPlicInit(VOID);

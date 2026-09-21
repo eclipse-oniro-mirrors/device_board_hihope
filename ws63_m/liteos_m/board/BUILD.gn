@@ -18,7 +18,6 @@ kernel_module(module_name) {
   asmflags = board_asmflags
   sources = [
     "board.c",
-    "interrupt_stub.c",
     "main.c",
     "pmp_init.c",
     "reset_vector.S",
@@ -54,7 +53,6 @@ config("public") {
     "-Wl,--wrap=memset",
     "-Wl,--wrap=memcpy",
     "-Wl,--whole-archive",
-    rebase_path("//device/soc/hisilicon/ws63_m/sdk/kernel/liteos/liteos_v208.5.0/ws63-liteos-app/libinterrupt.a"),
     rebase_path("//device/soc/hisilicon/ws63_m/sdk/tools/bin/compiler/riscv/cc_riscv32_musl_100/cc_riscv32_musl_fp/lib/gcc/riscv32-linux-musl/7.3.0/libgcc.a"),
     "-Wl,--no-whole-archive",
   ]
