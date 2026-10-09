@@ -1,0 +1,10 @@
+{
+  "parts": {
+    "device_hi3516": {
+      "module_list": [
+        "//device/board/hihope/hi3516:hi3516"
+      ]
+    }
+  },
+  "subsystem": "device_hi3516"
+}
