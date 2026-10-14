@@ -1,0 +1,92 @@
+/*
+ * RK3568 CAN1/CAN2 handover dts fragment (master side).
+ *
+ * Part of the MCS AMP CAN handover: the base can1/can2 nodes stay
+ * disabled in rk356x-oh.dtsi (so Linux rockchip_canfd never binds them)
+ * and these nodes are matched by the device/board/hihope/rk3568/mcs/
+ * mcs_can out-of-tree module (one driver, one module, N ports - the
+ * compatible selects the port via match data).
+ *
+ * Division of work (board-verified with mcs_net as the template):
+ *   master (mcs_can.ko): baudclk retargeted to 100MHz and held on,
+ *     apb_pclk held on, CRU reset pulse (SRST_CANx + SRST_P_CANx),
+ *     pinmux, one bus-probe read, platform facts published into the
+ *     per-port shared control block (can_ctrl.h contract):
+ *     CAN1 at 0x740ff100, CAN2 at 0x740ff200.
+ *   slave (LiteOS-M on CPU3): the whole data path - mode/bittiming/
+ *     filters/rx fifo/tx fifo registers and the CAN interrupts
+ *     (CAN1: GIC_SPI 2 -> INTID 34, CAN2: GIC_SPI 3 -> INTID 35),
+ *     self-configured via ArchHwiCreate (per-core GICD ownership; the
+ *     master never touches the GICD - "oh_rt,irq-intid" below is a
+ *     cross-check / documentation value only).
+ *
+ * CAN1 pin group: can1m1 = GPIO4_C2 (can1_rxm1) / GPIO4_C3 (can1_txm1),
+ * func3. The can1m0 group (GPIO1_A0/A1) is NOT usable on the
+ * toybrick/DAYU210 boards: those pins are shared with i2c3m0, which the
+ * on-board rt5670 audio codec occupies, so requesting them fails with
+ * -EBUSY. A board actually wired to GPIO1_A0/A1 should free i2c3 first
+ * and point pinctrl-0 back at &can1m0_pins.
+ *
+ * CAN2 pin group: can2m0 = GPIO4_B4 (can2_rxm0) / GPIO4_B5 (can2_txm0),
+ * func3; the can2m1 alternative (GPIO2_B1/B2, func4) exists too. Only
+ * relevant for a real external bus - internal loopback never leaves the
+ * die (a pinmux failure on the master side is non-fatal by design).
+ *
+ * CAN2 is opt-in: the node ships DISABLED and must be switched to
+ * "okay" in the board dts when a second real-time CAN port is needed.
+ * With it disabled the slave-side demo reports its CAN2 phases as
+ * "skipped (no master handover for port 2)" - by design, not an error.
+ *
+ * NOTE: this fragment is also embedded verbatim in
+ * mcs/dts/rk3568-ohrt-mcs.dtsi (the single integration point used on the
+ * toybrick/DAYU210 boards). Including BOTH files produces a duplicate
+ * label compile error - use exactly one of the two.
+ */
+
+/ {
+	mcs_can1: mcs-can1 {
+		compatible = "oh_rt,mcs-can1";
+		reg = <0x0 0xfe580000 0x0 0x1000>;
+
+		clocks = <&cru CLK_CAN1>, <&cru PCLK_CAN1>;
+		clock-names = "baudclk", "apb_pclk";
+
+		resets = <&cru SRST_CAN1>, <&cru SRST_P_CAN1>;
+		reset-names = "can", "can-apb";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&can1m1_pins>;
+
+		/* CAN1 irq: GIC_SPI 2 -> INTID 34 (cross-check only; the
+		 * slave configures the interrupt itself). */
+		oh_rt,irq-intid = <34>;
+		/* Shared control block physical address (the source of
+		 * truth for mcs_can.ko; the slave cross-checks it against
+		 * its compiled-in can2/can1 profile). */
+		oh_rt,ctrl-phys = <0x0 0x740ff100>;
+	};
+
+	mcs_can2: mcs-can2 {
+		compatible = "oh_rt,mcs-can2";
+		reg = <0x0 0xfe590000 0x0 0x1000>;
+
+		clocks = <&cru CLK_CAN2>, <&cru PCLK_CAN2>;
+		clock-names = "baudclk", "apb_pclk";
+
+		resets = <&cru SRST_CAN2>, <&cru SRST_P_CAN2>;
+		reset-names = "can", "can-apb";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&can2m0_pins>;
+
+		/* CAN2 irq: GIC_SPI 3 -> INTID 35 (cross-check only; the
+		 * slave configures the interrupt itself). */
+		oh_rt,irq-intid = <35>;
+		/* Shared control block physical address (source of truth). */
+		oh_rt,ctrl-phys = <0x0 0x740ff200>;
+
+		/* Opt-in: enable in the board dts when the second
+		 * real-time CAN port is handed over. */
+		status = "disabled";
+	};
+};

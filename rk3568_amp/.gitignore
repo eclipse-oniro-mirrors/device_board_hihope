@@ -1,0 +1,10 @@
+# out-of-tree module build artifacts (build_mcsnet.sh builds in place)
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+.tmp_versions/
+out/
