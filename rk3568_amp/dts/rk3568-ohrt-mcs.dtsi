@@ -1,0 +1,202 @@
+/*
+ * OH_RT MCS 混合部署 dts 片段（RK3568）
+ *
+ * R1.3 已按真机核验（rk3568 /proc/iomem + DTB memory@0 reg 解码，证据与推导见
+ * ../phase1/PROGRESS.md「板端实测」一节）：
+ *   - System RAM = 0x00200000-0x083fffff + 0x09400000-0x7fffffff；
+ *     openEuler/OEE 默认基址 0x08000000 落在活内存里，本板作废。
+ *   - 0x08400000-0x093fffff（16MB）未声明为 RAM 且 dts 源码无出处 → ATF/U-Boot
+ *     期挖除（RK3568 OP-TEE 标准位置），不可用。
+ *   - 0x7ac00000-0x7bbfffff、0x7be00000-0x7ddfffff 为 U-Boot/ATF memblock 保留
+ *     （归属不明），不可用。
+ *   - 选定 0x74000000-0x77ffffff：64MB 对齐，位于 0x0a600000-0x7abfffff
+ *     完全无占用的页分配器区段中段，远离内核 image 与各 DMA/CMA 子区。
+ *
+ * memory-region 顺序约定（mcs_km init_ped_rsv_mem）：第一项 = 通信共享内存
+ * （openamp vring/buffer，shared-dma-pool），第二项 = 实例/Client OS 保留内存
+ * （mcs_km INSTANCE_SIZE 0x2400000 = 36MB，此处 63MB 富余）。
+ *
+ * 合入方式：追加进 kernel/linux/patches/linux-6.6/rk3568_patch/kernel.patch，
+ * 与 legacy 工程 maxcpus=3 同一注入点（chosen 追加 bootargs，见
+ * rk3568-porting-roadmap.md R1.3）。
+ * 三方一致约束：dts 基址 = libmica shm_base_addr = 从核固件链接基址
+ * （UniProton 侧统一取 0x74000000）。
+ */
+
+/ {
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		/* 通信共享内存（openamp vring/buffer），1MB shared-dma-pool */
+		oh_rt_mcs_dma: oh_rt-mcs-dma@74000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x00 0x74000000 0x00 0x100000>;
+			no-map;
+		};
+
+		/* 实例/Client OS 保留内存，63MB */
+		oh_rt_mcs_mem: oh_rt-mcs-mem@74100000 {
+			reg = <0x00 0x74100000 0x00 0x3F00000>;
+			no-map;
+		};
+	};
+
+	/* 裸金属 pedestal（LiteOS-M 接入前的主通路，rpmsg_demo 使用此节点） */
+	oh_rt_mcs_remoteproc: mcs-remoteproc {
+		compatible = "oh_rt,mcs_remoteproc";
+		memory-region = <&oh_rt_mcs_dma>,
+		                <&oh_rt_mcs_mem>;
+	};
+
+	/* R2 骨架：LiteOS-M 客户端通路。mcs_km init_riscv_irq 需要本节点提供
+	 * reg[0] = IPC 中断控制器基址（ioremap）+ interrupts（irq_of_parse_and_map）。
+	 * RK3568 的 IPC 载体（外设基址/中断号）未定稿前不得启用，防误 ioremap。
+	 *
+	 * oh_rt_mcs_riscv: mcs-riscv-remoteproc {
+	 *         compatible = "oh_rt,mcs_riscv_remoteproc";
+	 *         reg = <0x00 0xXXXXXXXX 0x00 0x1000>;
+	 *         interrupts = <0 N 4>;
+	 *         memory-region = <&oh_rt_mcs_dma>,
+	 *                         <&oh_rt_mcs_mem>;
+	 * };
+	 */
+
+	/* ============================================================
+	 * 网卡让渡（协议无关）：GMAC1（eth1）整体交给从核（CPU3
+	 * LiteOS-M）作实时网口，任意链路层协议（EtherCAT/私有协议/
+	 * 裸以太网）经从核侧 net.h 帧级 API 在其上实现。
+	 * 主核侧 mcs_net.ko（compatible 匹配）负责时钟/复位/pinmux/
+	 * GRF 时延/PHY 自协商（10/100/1000）/MDIO 独占/1s 链路轮询；
+	 * 主核不碰 GICD——macirq（INTID 64）由从核经 ArchHwiCreate
+	 * 自配置（各核独占自己的 GICD）。数据面寄存器归从核
+	 * net_dwmac.c。共享控制块：0x740ff000（1MB 通信窗口尾部 4KB，
+	 * net_ctrl.h，与 mcs_net/net_ctrl.h 互为镜像）。
+	 * 注：节点已内嵌于本文件，不要再 include
+	 * mcs_net/rk3568-mcs-net.dtsi（同节点独立副本，两者并用会因
+	 * label 重复编译报错）。
+	 * ============================================================ */
+};
+
+/* eth1 从 Linux 摘除（stmmac 不再绑定；Linux 不再看到 eth1） */
+&gmac1 {
+	status = "disabled";
+};
+
+/ {
+	mcs_net_gmac1: mcs-net-gmac1 {
+		compatible = "oh_rt,mcs-net-gmac1";
+		/* 仅声明 MDIO 页（主核独占区 0x200/0x204） */
+		reg = <0x0 0xfe010000 0x0 0x1000>;
+		rockchip,grf = <&grf>;
+
+		clocks = <&cru SCLK_GMAC1>, <&cru SCLK_GMAC1_RX_TX>,
+			 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_MAC1_REFOUT>,
+			 <&cru ACLK_GMAC1>, <&cru PCLK_GMAC1>,
+			 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_GMAC1_PTP_REF>,
+			 <&cru PCLK_XPCS>, <&cru CLK_XPCS_EEE>;
+		clock-names = "stmmaceth", "mac_clk_rx",
+			      "mac_clk_tx", "clk_mac_refout",
+			      "aclk_mac", "pclk_mac",
+			      "clk_mac_speed", "ptp_ref",
+			      "pclk_xpcs", "clk_xpcs_eee";
+		assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+		assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>,
+					 <&cru CLK_MAC1_2TOP>;
+		assigned-clock-rates = <0>, <125000000>;
+
+		resets = <&cru SRST_A_GMAC1>;
+		reset-names = "stmmaceth";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&gmac1m1_miim
+			     &gmac1m1_tx_bus2
+			     &gmac1m1_rx_bus2
+			     &gmac1m1_rgmii_clk
+			     &gmac1m1_rgmii_bus>;
+
+		phy-reset-gpios = <&gpio2 RK_PD1 GPIO_ACTIVE_LOW>;
+
+		tx_delay = <0x37>;
+		rx_delay = <0x0f>;
+
+		/* GMAC1 macirq：GIC_SPI 32 → INTID 64（从核自配置，此处仅
+		 * 交叉核对/文档值；eth_wake_irq 不用） */
+		oh_rt,irq-intid = <64>;
+		/* 共享控制块物理地址（1MB 通信窗口尾部 4KB） */
+		oh_rt,ctrl-phys = <0x0 0x740ff000>;
+	};
+
+	/* ============================================================
+	 * CAN 让渡（经典 CAN 2.0B）：CAN1（fe580000）交给从核做实时
+	 * CAN 口。基础 can1 节点在 rk356x-oh.dtsi 保持 disabled（Linux
+	 * rockchip_canfd 不会绑定），本节点是唯一绑定。
+	 * 主核侧 mcs_can.ko 负责：CLK_CAN1 重设 100MHz 并读回发布、
+	 * 双时钟常开、CRU 复位脉冲（SRST_CAN1/SRST_P_CAN1）、can1m1
+	 * 引脚复用（GPIO4_C2=RX / GPIO4_C3=TX，func3）、总线探活读；
+	 * 平台参数发布到共享控制块 0x740ff100（can_ctrl.h，与
+	 * mcs_can/can_ctrl.h 互为镜像）。
+	 * 注：can1m0 组（GPIO1_A0/A1）与 i2c3m0 同脚，板上被 rt5670
+	 * 音频 codec 占用（请求即 -EBUSY），故本板用 can1m1。
+	 * 主核不碰 GICD——CAN1 中断（GIC_SPI 2 → INTID 34）由从核经
+	 * ArchHwiCreate 自配置。数据面寄存器归从核 can_rk3568.c。
+	 * mcs_can.ko 为单模块多口驱动：compatible 的 match data 选口
+	 * （CAN1/CAN2），节点即端口（reg/irq/ctrl-phys 皆取自本节点）。
+	 * 本节点与 mcs_can/rk3568-mcs-can.dtsi 为同节点独立副本，
+	 * 二者并用会因 label 重复编译报错（同 GMAC1 的约定）。
+	 * ============================================================ */
+	mcs_can1: mcs-can1 {
+		compatible = "oh_rt,mcs-can1";
+		reg = <0x0 0xfe580000 0x0 0x1000>;
+
+		clocks = <&cru CLK_CAN1>, <&cru PCLK_CAN1>;
+		clock-names = "baudclk", "apb_pclk";
+
+		resets = <&cru SRST_CAN1>, <&cru SRST_P_CAN1>;
+		reset-names = "can", "can-apb";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&can1m1_pins>;
+
+		/* CAN1 中断：GIC_SPI 2 → INTID 34（从核自配置，此处仅
+		 * 交叉核对/文档值） */
+		oh_rt,irq-intid = <34>;
+		/* 共享控制块物理地址（net_ctrl 同页 +0x100） */
+		oh_rt,ctrl-phys = <0x0 0x740ff100>;
+	};
+
+	/* ============================================================
+	 * CAN2 让渡（可选，多口并发）：CAN2（fe590000）与 CAN1 同 IP，
+	 * 可同时交给从核并发使用（独立 fifo/中断/控制块页，从核侧
+	 * can_rk3568.c 按口实例化）。本节点默认 disabled：需要第二个
+	 * 实时 CAN 口时在板级 dts 将 status 改为 "okay" 即可；未启用
+	 * 时从核 demo 的 CAN2 阶段报 skipped（设计行为，非错误）。
+	 * 参数：GIC_SPI 3 → INTID 35；can2m0 引脚组（GPIO4_B4=RX /
+	 * GPIO4_B5=TX，func3，can2m1=GPIO2_B1/B2 为备选组）；控制块
+	 * 页 0x740ff200（CAN1 页 +0x100）。回环验证不出管芯，引脚
+	 * 组仅对真实外部总线有意义（pinmux 失败非致命）。
+	 * ============================================================ */
+	mcs_can2: mcs-can2 {
+		compatible = "oh_rt,mcs-can2";
+		reg = <0x0 0xfe590000 0x0 0x1000>;
+
+		clocks = <&cru CLK_CAN2>, <&cru PCLK_CAN2>;
+		clock-names = "baudclk", "apb_pclk";
+
+		resets = <&cru SRST_CAN2>, <&cru SRST_P_CAN2>;
+		reset-names = "can", "can-apb";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&can2m0_pins>;
+
+		/* CAN2 中断：GIC_SPI 3 → INTID 35（从核自配置，此处仅
+		 * 交叉核对/文档值） */
+		oh_rt,irq-intid = <35>;
+		/* 共享控制块物理地址（CAN1 页 +0x100） */
+		oh_rt,ctrl-phys = <0x0 0x740ff200>;
+
+		/* 可选口：默认关闭，需要时板级 dts 改 "okay" */
+		status = "disabled";
+	};
+};

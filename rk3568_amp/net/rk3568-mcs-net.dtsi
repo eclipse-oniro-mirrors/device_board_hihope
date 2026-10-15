@@ -1,0 +1,78 @@
+/*
+ * RK3568 GMAC1 handover dts fragment (master side).
+ *
+ * Part of the MCS AMP NIC handover: disables the Linux eth1 (stmmac)
+ * binding and declares the mcs-net-gmac1 node matched by the
+ * device/board/hihope/rk3568/mcs/mcs_net out-of-tree module.
+ *
+ * Division of work (final architecture, board-verified):
+ *   master (mcs_net.ko): clocks held on + clk_mac_speed retarget,
+ *     CRU reset release, RGMII pinmux, GRF delays, PHY autoneg
+ *     (10/100/1000), MDIO page ownership, 1s link poll into the
+ *     shared control block at 0x740ff000 (net_ctrl.h contract).
+ *   slave (LiteOS-M on CPU3): the whole data plane - DMA/MTL/MAC
+ *     registers and the macirq interrupt, self-configured end-to-end
+ *     via ArchHwiCreate (per-core GICD ownership; the master never
+ *     touches the GICD - "oh_rt,irq-intid" below is a cross-check /
+ *     documentation value only).
+ *
+ * Integration: include from the board dts (e.g. the toybrick
+ * rk3568-toybrick-x0-linux.dts), or fold into the kernel.patch dts
+ * include chain. Requires the CPU3 handover bootargs (maxcpus=3)
+ * from the MCS slave-core bring-up.
+ *
+ * Board-verified values (RK3568 toybrick/DAYU210, YT8531S PHY):
+ *   tx_delay = 0x37, rx_delay = 0x0f (same as the vendor gmac1 node).
+ */
+
+/* eth1 is detached from Linux: stmmac must not bind the node. */
+&gmac1 {
+	status = "disabled";
+};
+
+/ {
+	mcs_net_gmac1: mcs-net-gmac1 {
+		compatible = "oh_rt,mcs-net-gmac1";
+		/* driver maps only the MDIO page (MAC + 0x200/0x204);
+		 * the rest of the GMAC1 space belongs to the slave. */
+		reg = <0x0 0xfe010000 0x0 0x1000>;
+		rockchip,grf = <&grf>;
+
+		clocks = <&cru SCLK_GMAC1>, <&cru SCLK_GMAC1_RX_TX>,
+			 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_MAC1_REFOUT>,
+			 <&cru ACLK_GMAC1>, <&cru PCLK_GMAC1>,
+			 <&cru SCLK_GMAC1_RX_TX>, <&cru CLK_MAC1_PTP_REF>,
+			 <&cru PCLK_XPCS>, <&cru CLK_XPCS_EEE>;
+		clock-names = "stmmaceth", "mac_clk_rx",
+			      "mac_clk_tx", "clk_mac_refout",
+			      "aclk_mac", "pclk_mac",
+			      "clk_mac_speed", "ptp_ref",
+			      "pclk_xpcs", "clk_xpcs_eee";
+		assigned-clocks = <&cru SCLK_GMAC1_RX_TX>, <&cru SCLK_GMAC1>;
+		assigned-clock-parents = <&cru SCLK_GMAC1_RGMII_SPEED>,
+					 <&cru CLK_MAC1_2TOP>;
+		assigned-clock-rates = <0>, <125000000>;
+
+		resets = <&cru SRST_A_GMAC1>;
+		reset-names = "stmmaceth";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&gmac1m1_miim
+			     &gmac1m1_tx_bus2
+			     &gmac1m1_rx_bus2
+			     &gmac1m1_rgmii_clk
+			     &gmac1m1_rgmii_bus>;
+
+		phy-reset-gpios = <&gpio2 RK_PD1 GPIO_ACTIVE_LOW>;
+
+		tx_delay = <0x37>;
+		rx_delay = <0x0f>;
+
+		/* GMAC1 macirq: GIC SPI 32 -> INTID 64 (cross-check only;
+		 * the slave configures the interrupt itself). */
+		oh_rt,irq-intid = <64>;
+		/* Shared control block physical address (informational;
+		 * the address is compiled into both sides via net_ctrl.h). */
+		oh_rt,ctrl-phys = <0x0 0x740ff000>;
+	};
+};
