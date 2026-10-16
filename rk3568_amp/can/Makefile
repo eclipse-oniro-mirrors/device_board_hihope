@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
+# Copyright (c) 2026 Huawei Device Co., Ltd.
 # Out-of-tree build; driven by build_mcscan.sh (same flow as mcs_net).
 ifneq ($(KERNELRELEASE),)
 obj-m := mcs_can.o

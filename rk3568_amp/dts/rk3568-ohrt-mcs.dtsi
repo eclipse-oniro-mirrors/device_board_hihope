@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * OH_RT MCS 混合部署 dts 片段（RK3568）
  *
  * R1.3 已按真机核验（rk3568 /proc/iomem + DTB memory@0 reg 解码，证据与推导见
@@ -199,4 +202,24 @@
 		/* 可选口：默认关闭，需要时板级 dts 改 "okay" */
 		status = "disabled";
 	};
+};
+
+/* ============================================================
+ * UART3 让渡：交给从核（CPU3 LiteOS-M rk3568_m）作实时串口。
+ * 20pin（J9903）引出 uart3m1 组（TX=GPIO3_B7 / RX=GPIO3_C0，
+ * func4）。从核驱动自带全套 bring-up（CRU 时钟门控 + xin24m
+ * 父时钟 + GRF pinmux + GIC INTID 151 认领/路由），无 PHY/时钟
+ * 移交等主核侧服务（区别于 GMAC1/CAN1），无需 mcs-uart helper
+ * 节点，主核只需让出：
+ *   - Linux 不创建 serial 设备（dw-apb-uart 不绑定）
+ *   - pinctrl/时钟/irq 151 均不申请（焊盘停 boot 链默认态，
+ *     由从核 uart_init 自配 GRF）
+ *   - ttyS 序列整体前移一位（BT=uart8 编号变化，烧板后回归）
+ * 从核对应配置：uart_board_cfg.h BOARD_UART3_PINMUX =
+ * RK3568_UART3_PINMUX_M1（产品约定：rk3568_m 默认串口）。
+ * 实测（DAYU200，2026-10-13）：uart_test 3 self + 片外跳线回环
+ * 双 PASS（256/256，isr=480 基线）。
+ * ============================================================ */
+&uart3 {
+	status = "disabled";
 };

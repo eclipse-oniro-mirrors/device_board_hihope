@@ -37,8 +37,8 @@
 
 - 主核：你的应用 → libmica（生命周期/服务注册）→ openamp+libmetal（rpmsg 端点收发）
   → mcs_km.ko 内核模块（vring/共享内存映射/核间中断 SGI）
-- 从核（morpheus 仓）：mica 服务框架（`kernel/liteos_new/compat/mcs/mica`）→
-  openamp+libmetal 从核移植（`kernel/liteos_new/compat/mcs` 下）→ LiteOS-M
+- 从核（evolve 分支 `kernel/liteos_m`）：mica 服务框架（`kernel/liteos_m/compat/mcs/mica`）→
+  openamp+libmetal 从核移植（`kernel/liteos_m/compat/mcs` 下）→ LiteOS-M
   内核 + arm64 端口
 
 主从核的契约只有两个：**端点名（service name）**和**协议常量**（共享内存基址、
@@ -55,8 +55,8 @@ API 速查。
 
 - 硬件：RK3568 板（dayu210/Toybrick X0）、USB 串口线（1500000 波特率）、网线
 - 构建机：OH 全仓已完整编译过 rk3568 产品（需要其 musl sysroot 与内核构建产物）
-  ——**仅主核侧需要**；从核镜像在 morpheus 仓独立构建（第 5 节），只依赖 python3，
-  工具链仓内自带
+  ——**仅主核侧需要**；从核镜像在 evolve 分支源码树独立构建（第 5 节），
+  依赖 python3，工具链树内 prebuilts 自带
 - `$CODE` = OH 全仓根目录；本方案分布在两个仓的目录：
   `$CODE/device/board/hihope/rk3568_amp`（板级：让渡驱动/dts/示例/文档）、
   `$CODE/device/soc/rockchip/rk3568/mcs`（架构：mcs_km/libmica/prebuilt 三方库）
@@ -104,8 +104,8 @@ API 速查。
 
 > 地址选择依据（改地址前必读）：0x74000000-0x77ffffff 是按真机 `/proc/iomem`
 > 核验的完全空闲段；若调整，须同时改三处保持一致：dts、从核
-> `kernel/liteos_new/compat/mcs/mica/mica_cfg.h` 的 `VDEV_START_ADDR`、
-> 从核链接脚本 `device/board/rockchip/rk3568/liteos_new/board/board.ld` 基址。
+> `kernel/liteos_m/compat/mcs/mica/mica_cfg.h` 的 `VDEV_START_ADDR`、
+> 从核链接脚本 `kernel/liteos_m/targets/rk3568_m/liteos_m/board/board.ld` 基址。
 
 ### 3.2 打 dts patch（两种方式任选）
 
@@ -271,32 +271,34 @@ cd $CODE/device/board/hihope/rk3568_amp
 ## 5. 第三步：构建从核 LiteOS-M 镜像
 
 从核固件 = LiteOS-M 内核 + 混合部署组件（openamp/libmetal 从核移植 + mica
-服务框架）。两种获取方式：**方式一**从 morpheus 源码仓构建（与主核侧 mcs
+服务框架）。两种获取方式：**方式一**从 evolve 分支源码树构建（与主核侧 mcs
 联调包独立演进、独立构建）；**方式二**使用从核 SDK 二进制包（内核与基础库
 预编译，只改板级与应用源码，适合纯应用开发者）。
 
-### 5.1 方式一：源码构建（morpheus 仓）
+### 5.1 方式一：源码构建（evolve 分支源码树）
 
-- 仓库：`https://gitcode.com/pb28/morpheus`，分支 `main`
-- 内核与组件：`kernel/liteos_new`（混合部署组件在 `kernel/liteos_new/compat/mcs/`）
-- 板级适配：`device/board/rockchip/rk3568/liteos_new`
+- 源码树：OpenHarmony **evolve 分支**（`OpenHarmony_liteos_evolve_20260924`），
+  从核代码分布在 `kernel/liteos_m`、`device/board/hihope/rk3568_m`、
+  `device/soc/rockchip/rk3568_m`、`vendor/hihope/rk3568_m` 四个仓
+- 内核与组件：`kernel/liteos_m`（混合部署组件在 `kernel/liteos_m/compat/mcs/`）
+- 板级适配：`kernel/liteos_m/targets/rk3568_m/liteos_m/board`（含 `can/`、
+  `net/` 实时驱动与 demo）
 
 ```bash
-git clone -b main https://gitcode.com/pb28/morpheus.git
-cd morpheus
+# repo 工作区（evolve 分支；已有工作区直接 repo sync 即可）：
+repo init -u <manifest-url> -b OpenHarmony_liteos_evolve_20260924
+repo sync -c
 
-# hb 构建（产品 rk3568_amp 已内置全部配置，含工具链/组件开关/链接脚本）：
-PYTHONPATH=$PWD/build python3 build/hb/main.py build --product-name rk3568_amp
+# 产品级构建（产品 rk3568_m 已内置全部配置：工具链/组件开关/链接脚本）：
+./build.sh --product-name rk3568_m
 
-# 产物（unstripped 版带符号，便于 addr2line 调试）：
-out/rk3568_amp/rk3568_amp/obj/kernel/liteos_new/unstripped/bin/liteos
-# 拷为主核 demo 约定的名字：
-cp out/rk3568_amp/rk3568_amp/obj/kernel/liteos_new/unstripped/bin/liteos liteos-m.elf
+# 产物（拷为主核 demo 约定的名字；out/ 下另有带符号版本便于 addr2line）：
+cp out/rk3568_m/rk3568_m/OHOS_Image liteos-m.elf
 ```
 
 ### 5.2 方式二：从核 SDK 包（二进制库 + 应用源码）
 
-SDK 包 `rk3568_amp_slave_sdk.tar.gz`（第 3 版，基线 morpheus main
+SDK 包 `rk3568_amp_slave_sdk.tar.gz`（第 3 版，基线从核源码 main
 `90a4b6251`，含从核 GMAC1 网卡驱动、CAN 多口驱动（CAN1/CAN2 并发）与
 UART 驱动，变化详见包内 `release.md`）：内核（libliteos）、openamp、
 libmetal、mcs/libmica、musl libc、safeC（libsec）均已预编译为静态库，板级代码
@@ -310,7 +312,7 @@ export OHOS_LLVM=/path/to/ohos/llvm    # OHOS clang 15.0.4（库为 LTO，需兼
 
 - 写业务：改 `example/main.c` 的 `app_task()`；新增 `.c` 加进 `build.sh`
   的 `SRCS`；
-- 库说明：SDK 内 7 个库全部来自 morpheus 仓源码（liteos_new 内核 +
+- 库说明：SDK 内 7 个库全部来自从核源码（LiteOS-M 内核 +
   `compat/mcs` 组件 + `third_party/{musl,bounds_checking_function}` 裁剪集）；
   链接所需的 `libclang_rt.builtins.a`（LLVM compiler-rt）不随包分发，由
   `build.sh` 从 `$OHOS_LLVM` 工具链自动定位；
@@ -347,7 +349,7 @@ hdc file send $BOARD/out/artifacts/rpmsg_demo   /data/
 hdc file send $BOARD/out/artifacts/slave_boot   /data/     # 可选
 hdc file send $BOARD/net/mcs_net.ko             /data/     # 网卡让渡（可选，见第 7 节）
 hdc file send $BOARD/can/mcs_can.ko             /data/     # CAN 让渡（可选，见第 7 节）
-hdc file send <morpheus>/liteos-m.elf                       /data/liteos-m.elf
+hdc file send <evolve>/out/rk3568_m/rk3568_m/OHOS_Image      /data/liteos-m.elf
 
 # 动态库部署集（先建目录；整目录拷，含 libmica.so + libmetal.so.1 +
 # libopen_amp.so.1 + aarch64 musl libc.so / ld-musl-aarch64.so.1——板上用户态
@@ -435,6 +437,19 @@ lb2 两阶段 `skipped (no master handover for port 2)` 属设计行为。
 收发 API / 位时序 / CAN2 启用 / 多口扩展的完整说明见
 `mcs_can/USER_GUIDE.md`。
 
+**RPC 服务化 + 代理网络 + tty bridge 验证（可选，需从核固件
+`LOSCFG_MCS_RPC=y`）**：
+
+```bash
+# 无需额外 ko：rpc 走既有 rpmsg 通道。主核 demo 是 aarch64 动态链接，
+# 需要 /data/lib 动态库集（见 §6 部署）。
+/data/netproxy_demo -f /data/liteos-m.elf -c 3        # 拉起从核 + rpc/代理/tty 全家桶
+```
+
+从核起来后：主核控制台自动跑通 self-check（`slave service up`、ping
+echo）；`nptest`/autotest 判据与主核 pty 终端（`/dev/pts/N` 直接登录从核
+shell）的完整验证流程见 §12.6。
+
 ## 8. 应用开发：怎么用框架通信
 
 ### 8.1 编程模型（主核侧，5 步）
@@ -511,13 +526,13 @@ static int my_rx_cb(struct rpmsg_endpoint *ept, void *data,
 ### 8.3 从核侧：写自己的服务
 
 方式一（最小改动）：换掉 `rpmsg-tty` 的命令 handler（板级
-`device/board/rockchip/rk3568/liteos_new/board/main.c` 的 MicaTaskEntry 中
+`kernel/liteos_m/targets/rk3568_m/liteos_m/board/main.c` 的 MicaTaskEntry 中
 `cfg.sys_ops.shell_cmd_handler = MyCmdHandler;`，用 `mica_tty_send` 回结果）。
 
 方式二（独立端点，推荐）：仿 `echo_service.c` 建自己的端点：
 
 ```c
-/* kernel/liteos_new/compat/mcs/mica/libmica/src/services/my_service.c（LiteOS-M 侧） */
+/* kernel/liteos_m/compat/mcs/mica/libmica/src/services/my_service.c（LiteOS-M 侧） */
 static struct rpmsg_endpoint my_ept;
 
 static int my_rx_cb(struct rpmsg_endpoint *ept, void *data,
@@ -598,7 +613,7 @@ $CLANG --target=aarch64-linux-ohos --sysroot=$MUSL \
 | `cat .../mcs-net-gmac1/state` | 诊断：probe 步骤回放 + 控制块实时状态（master/slave/link） |
 | `cat .../mcs-net-gmac1/mdio` | 诊断：PHY 寄存器直读（含 YT8531 扩展延迟寄存器） |
 
-从核侧（`net.h`，位于 `device/board/rockchip/rk3568/liteos_new/board/driver/net/`；
+从核侧（`net.h`，位于 `kernel/liteos_m/targets/rk3568_m/liteos_m/board/net/`；
 参考用例 `net_test.c`——强制 100M FD + 轮询收包 demo）：
 
 | API | 作用 |
@@ -619,7 +634,7 @@ $CLANG --target=aarch64-linux-ohos --sysroot=$MUSL \
 | `insmod mcs_can.ko` | 时钟（baudclk 重设 100MHz 并读回发布）/CRU 复位/pinmux/总线探活后移交数据面，控制块置 READY（按 0x100 分页：CAN1 0x740ff100 / CAN2 0x740ff200） |
 | `cat .../mcs-canN/state` | 诊断：probe 步骤回放 + `port=N` + 控制块实时状态（master/slave） |
 
-从核侧（`can.h`，位于 `device/board/rockchip/rk3568/liteos_new/board/driver/can/`；
+从核侧（`can.h`，位于 `kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/`；
 参考用例 `can_test.c`——13 阶段片内回环 demo，零外部硬件）：
 
 | API | 作用 |
@@ -660,7 +675,7 @@ $CLANG --target=aarch64-linux-ohos --sysroot=$MUSL \
 > 实时 CAN 口**使用的协议开发者/集成者。两口可**并发**使用。
 > 主核侧驱动：本目录 `mcs_can.c`（Linux 6.6 out-of-tree 模块，单模块多口：
 > dts 节点的 compatible 选口）。
-> 从核侧驱动：morpheus 仓 `device/board/rockchip/rk3568/liteos_new/board/driver/can/`
+> 从核侧驱动：evolve 分支 `kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/`
 > （`can.h` 公开 API + `can_rk3568.c` 实现，每口一个 `CanDevice` 实例）。
 > 设计细节见 `mcs_can.c` / `can_rk3568.c` 头部注释（本文只讲"怎么用"）。
 
@@ -847,7 +862,7 @@ pinmux/总线探活/ctrl 发布）；`port=N` 行标明该节点绑定的控制�
 ### 11.4 从核侧 API 参考（协议层视角）
 
 ```c
-#include "can.h"   // device/board/rockchip/rk3568/liteos_new/board/driver/can/
+#include "can.h"   // kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/
 ```
 
 共 7 个接口，全部无动态内存、可重入于单任务上下文（Recv/GetStats 可从
@@ -1096,3 +1111,230 @@ lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
   契约）；其余 9 个 CAN1 阶段与上轮逐项一致，`all phases done` 无失败。
 - 回归环境：`mcs_km.ko + mcs_can.ko`（混合另加 `mcs_net.ko`），
   `rpmsg_demo -f liteos-*.elf -c 3`，串口 1500000。
+
+---
+
+## 12. RPC 服务化与代理网络（socket proxy / tty bridge）
+
+### 12.1 概述
+
+#### 12.1.1 这是什么
+
+在第 8 章裸 rpmsg 收发（`rpmsg_sendto` + rx 回调）之上，本方案提供一套
+**结构化 RPC 服务化框架**，并在其上叠了两层开箱即用的能力：
+
+| 能力 | 端点 | 说明 |
+|---|---|---|
+| rpmsg-rpc 框架 | `rpmsg-rpc` | 单端点双角色：从核既是 server（处理主核请求）又是 client（主动调主核）。请求/响应带 func_id/序号/errno 语义，>448B 自动分片 |
+| socket proxy | 同上 | 从核侧 BSD socket 接口（socket/connect/send/recv/…）经 RPC 转发到主核，由主核 Linux 协议栈真实执行——从核应用"借用"主核网络 |
+| tty bridge | `rpmsg-tty` + pty | 主核 netproxy_demo 自动创建 pty（`/dev/pts/N`），直连从核 shell——在 Linux 侧开一个终端跟从核交互，不占用串口 |
+
+从核侧源码：`kernel/liteos_m`（evolve 分支）
+`compat/mcs/mica/libmica/src/services/rpc_service.c`（框架）+
+`targets/rk3568_m/liteos_m/board/netproxy_test.c`（demo 与 np API）。
+主核侧源码：本仓 `example/netproxy_demo.c` + `example/rpc_proto.h`。
+
+#### 12.1.2 职责划分（重要约定）
+
+- **从核**：注册一个 handler 接主核请求（server 角色）；业务需要主核
+  代办的事（网络、日志上报、取时间）用 `mica_rpc_call()` 同步调用
+  （client 角色）；
+- **主核**：`netproxy_demo` 内置 rpc server（PING/GET_TICK/LOG/STAT）+
+  socket worker（把 np 请求映射为真实 Linux socket 调用）+ tty bridge
+  （pty ↔ rpmsg-tty 双向泵）；
+- **同一时刻只允许一个在途 call**（框架内部串行化），并发业务请自行
+  在从核侧排队（demo 的 concurrent 用例即两任务交替打点验证）。
+
+### 12.2 协议帧格式（`rpc_proto.h`，两侧共享）
+
+```
+帧头（16B，小端）：func_id(4) | flags(4) | id(4) | ret(4) | err(4) → payload ≤ RPC_MAX_PAYLOAD(448)
+flags: RPC_F_REQ 0x1 请求 | RPC_F_RESP 0x2 响应 | RPC_F_MORE 0x4 分片（后续还有）
+id:    请求序号，响应原样带回（超时/错配的过期响应按 drop 丢弃）
+ret/err: 响应携带；ret=-1 时 err=-errno（主核 errno 原样取负，如 -111
+       = ECONNREFUSED，从核侧直接拿到 Linux 错误码）
+```
+
+通用 opcodes：
+
+| func_id | 方向 | 语义 |
+|---|---|---|
+| `RPC_FUNC_PING` (1) | 双向 | payload 原样回显（往返探活） |
+| `RPC_FUNC_GET_TICK` (2) | 从→主 | 取主核 tick（从核侧时间基准对齐用） |
+| `RPC_FUNC_LOG` (0x200) | 从→主 | 一行日志上抛主核控制台（从核串口不可用时的诊断通道） |
+| `RPC_FUNC_STAT` (0x202) | 主→从 | 取从核 rpc 服务计数器快照（`struct mica_rpc_diag`） |
+
+socket proxy opcodes（0x100 段）：`SOCKET/BIND/CONNECT/LISTEN/ACCEPT/
+SEND/SENDTO/RECV/RECVFROM/CLOSE/SETSOCKOPT`，参数即对应 Linux 系统调用的
+结构化序列（fd/flags/raw sockaddr/data），语义逐一对齐——从核应用视角
+就是"BSD socket，只是 fd 由主核持有"。
+
+### 12.3 从核侧 API（`#include <mica/rpc.h>`）
+
+| 接口 | 语义 |
+|---|---|
+| `int mica_rpc_is_ready_pub(void)` | rpc 端点是否已绑定就绪（1/0）；未就绪时 register/call 返回 `-EAGAIN` |
+| `int mica_rpc_register_handler(mica_rpc_handler_t handler)` | 注册 server 处理器（单 handler，后注册覆盖先注册）；handler 收到 `(func_id, req, req_len)`，往 `resp`（容量 `resp_cap`）填写并**返回长度**，或返回负 errno 表示 `ret=-1/err=-ret` |
+| `int mica_rpc_call(func_id, req, req_len, resp, resp_cap, resp_len, timeout_ms)` | 同步调用主核：阻塞至响应/超时。返回值 = 响应 `hdr.ret`；`-1` 时主核 errno 取负在 err；本地传输错误（`-ETIMEDOUT`/`-EIO`）直接返回。`timeout_ms=-1` 永久等待 |
+| `void mica_rpc_get_diag(struct mica_rpc_diag *d)` | 计数器快照：rx/tx、短帧、drop（过期 id）、timeout 等，问题定位用 |
+
+**handler 契约（务必遵守）**：handler 运行在**单一 rpmsg 接收线程回调
+上下文**——必须快进快出（微秒级），不许阻塞/睡眠/再发 RPC（死锁）；
+重活儿交给任务队列。demo 的 `NpRpcHandler`（netproxy_test.c）是标准
+写法：PING 回显 + STAT 填快照，全程无锁无阻塞。
+
+**payload 上限**：单帧 448B；更大请求由框架自动分片（`RPC_F_MORE`），
+`mica_rpc_call` 对使用者透明——demo 的 bigmsg 用例一次 4KB 往返即走
+分片重组路径。
+
+### 12.4 代理网络（socket proxy）使用
+
+#### 12.4.1 从核侧 API（`netproxy_test.c`，7 个包装）
+
+地址参数是 **raw sockaddr 字节串**（不依赖从核侧任何 socket 头文件），
+`sockaddr_in` 自己按 16 字节组装（family/port/addr 大端）。domain/type
+直接用 Linux 数值（`2`=AF_INET、`1`=SOCK_STREAM、`2`=SOCK_DGRAM）。
+demo 提供 `NpBuildSockaddrIn()` 可直接参考/复用：
+
+```c
+int  np_socket(int domain, int type, int protocol);
+int  np_connect(int fd, const uint8_t *addr, uint32_t addrlen);
+int  np_send(int fd, const void *buf, uint32_t len, int flags);
+int  np_sendto(int fd, const void *buf, uint32_t len, int flags,
+               const uint8_t *addr, uint32_t addrlen);
+int  np_recv(int fd, void *buf, uint32_t cap, int flags, int timeout_ms);
+int  np_recvfrom(int fd, void *buf, uint32_t cap, int flags, int timeout_ms,
+                 uint8_t *from, uint32_t *fromlen);
+int  np_close(int fd);
+```
+
+返回值与 Linux 同名调用语义一致，错误为真实主核 errno 取负（`connect`
+被拒 `-111`、`recv` 超时 `-11`）。`recv/recvfrom` 的 `timeout_ms` 由
+主核侧 poll 实现（demo 用 3000ms）。示例（摘自 demo `NpProbe`）：
+
+```c
+UINT8 addr[16];
+NpBuildSockaddrIn(addr, ipBe, port);           /* 16B sockaddr_in，大端 */
+
+fd = np_socket(2 /*AF_INET*/, 1 /*SOCK_STREAM*/, 0);
+np_connect(fd, addr, sizeof(addr));
+np_send(fd, payload, strlen(payload), 0);
+n = np_recv(fd, rxBuf, sizeof(rxBuf), 0, 3000);   /* 3s 超时 */
+np_close(fd);
+```
+
+> BIND/LISTEN/ACCEPT/SETSOCKOPT 的 RPC opcode（0x103/0x104/0x101/0x121）
+> 已在协议中预留，从核侧包装尚未提供（当前以客户端主动连接场景为主）。
+
+#### 12.4.2 内置 shell 命令（netproxy_test.c）
+
+```
+rpctest [len]        从核 shell：默认 64B 载荷经主核 PING 往返，打印 ok/失败
+nptest <ip> <port>   跑 UDP + TCP 两轮探测，逐步打印结果
+```
+
+**`nptest` 端口约定**：UDP 打 `<port>`、TCP 打 `<port+1>`（`NpProbe`
+实现如此）——对端 echo server 需按此监听（如 `nptest <ip> 9000` 对应
+UDP 9000 + TCP 9001，即 §12.6 的 PC echo server 布局）。`nptest` 是
+代理网络最快的烟囱验证。
+
+### 12.5 主核侧操作（netproxy_demo）
+
+#### 12.5.1 构建与部署
+
+demo 已随主核产物构建（`example/build_example.sh`，aarch64 动态链接）。
+部署三件套到板子：
+
+```bash
+# WSL/构建机 → 板（hdc；IP 持久化问题见 §6）
+hdc file send out/artifacts/netproxy_demo  /data/netproxy_demo
+hdc file send <slave固件>                  /data/liteos-m.elf
+hdc file send out/lib/. /data/lib/         # 动态库集（libmica.so/libmetal.so.1/
+                                           # libopen_amp.so.1/musl loader，见 §6）
+```
+
+#### 12.5.2 运行
+
+```bash
+/data/netproxy_demo -f /data/liteos-m.elf -c 3          # 最小启动
+# 可选：-n <ping_count>   启动后主核侧主动发 N 个 PING 验证往返
+```
+
+demo 拉起从核后依次就绪的标志（主核控制台）：
+
+```
+slave service up            # 从核 rpc server 通告绑定成功（NS: rpmsg-rpc）
+tty bridge: /dev/pts/0      # pty 已创建——直接当从核终端用
+```
+
+**tty bridge 用法**：`/dev/pts/0` 即从核 shell 终端（`screen /dev/pts/0`
+或 `cat > /dev/pts/0` 写命令、`cat /dev/pts/0` 看回显）。从核侧
+`mica_tty_printf` 的输出（含 shell 命令回执）也走这条通道——串口被
+占用/损坏时，这是从核交互与诊断的唯一通路。
+
+### 12.6 端到端验证（上板实测判据）
+
+前置（PC 侧，一次配好）：
+
+```bash
+# echo server：TCP 9001（echo）/ TCP 9101（silent accept，不回显，测 recv 超时）
+#             / UDP 9000（echo）。脚本随包：tools/echo_server.py
+python echo_server.py          # 需放行防火墙入站 9000/9001/9101
+```
+
+板上（从核 shell 经 pty 或串口）跑内置自测 `np autotest`（上电 demo
+任务也会自动跑一轮），全绿判据：
+
+| 判据（从核日志） | 验证点 |
+|---|---|
+| `auto: settle 8/8` | 从核稳定观察到主核 tick（链路活性） |
+| `rpctest(16/32/64) ok` | 3 档小载荷 PING 往返（含 pty 手工注入路径） |
+| `bigmsg ... ok` | 4KB 载荷分片往返（RPC_F_MORE 重组） |
+| `concurrent aFails=0 bFails=0 done=1/1` | 双任务交替并发 call（串行化不死锁不丢包） |
+| `errpath recv-timeout ret=-11` | connect 成功 + 3s recv 超时 → 真实 EAGAIN |
+| `errpath conn-refused ret=-110` | 连 DROP 端口 → 主核 poll 超时 ETIMEDOUT 透传 |
+| `ext tcp conn=0 send=23 recv=23` | 经代理打到 PC echo server，23B 原样回 |
+| `ext udp send=23 recv=23` | UDP 路径同上 |
+| `np_demo: autotest finished` | 收尾无挂起 |
+
+生命周期（主核侧反复验证 kill/重启，实测 3/3 轮通过）：
+
+```bash
+kill <netproxy_demo pid>      # 从核随 PSCI CPU_OFF 下电
+/data/netproxy_demo -f /data/liteos-m.elf -c 3    # 重新拉起，rpc 自愈重绑
+```
+
+### 12.7 已知语义与限制
+
+- **单在途 call**：同一时刻一个 `mica_rpc_call`（内部互斥）；并发场景
+  从核侧排队，demo concurrent 用例验证的就是这个模式；
+- **handler 不可阻塞**：receiver 线程串行分发，handler 卡住 = 整个
+  rpc 端点（含 socket proxy、tty 回执）停摆；
+- **fd 归属主核**：np 返回的 fd 是主核 Linux 的 fd，从核侧仅作 opaque
+  句柄；从核重启后 fd 全部失效（主核 demo 随退出统一回收）；
+- **tty bridge 依赖 `rpmsg-tty` 服务**：从核固件需含 tty/umt 组件
+  （SDK 默认包含）；纯 serial 控制台场景可不用该能力，不影响 rpc。
+
+### 12.8 常见问题排查
+
+| 现象 | 定位 |
+|---|---|
+| `mica_rpc_call` 一直 `-EAGAIN` | 端点未绑定：确认主核 demo 已起、从核 `mica_rpc_is_ready_pub()==1` 后再调 |
+| errpath 用例 `conn fail` 而非 `ret=-11` | PC 侧 echo server 没起或防火墙未放行 9101（connect 直接超时；判据要的是"连上后 recv 超时"） |
+| `ext` 用例 recv=0/超时 | 同上：9001/9000 未监听或被防火墙 DROP；先在 PC 本机 `nc` 自测 |
+| pty 无回显 | tty bridge 未就绪（看主核 `tty bridge: /dev/pts/N` 打印）；确认固件含 tty 组件 |
+| rpc 偶发 drop 增长 | `mica_rpc_get_diag` 看 `drop_cnt`：多为超时响应迟到（业务超时设太短）；`timeout_cnt` 同步看 |
+| 从核重启后 np fd 失效 | 预期行为：fd 由主核持有，从核重启即失联；上层业务自行重连 |
+
+---
+
+### 12.9 附：实测记录摘要（RK3568 DAYU200，主核 Linux 6.6 / 从核 CPU3 AArch64 EL1）
+
+- **全量回归**（2026-10-18，基线含同事 arm64 MMU 架构重构 + target 层
+  region table NC 修复）：`rpc_tty_verify` 全绿——settle 8/8、
+  rpctest 16/32/64、bigmsg 4KB 分片、并发 aFails=0/bFails=0、
+  errpath -11/-110、ext TCP+UDP 23B 回显、pty 注入 `rpctest 32` ok；
+  kill/restart 生命周期 3/3 轮通过。RPC 通道在 MMU Device→Normal-NC
+  映射下无对齐 fault（8 字节 memcpy 对 rpmsg payload 的块拷贝正常）。
+- **回归环境**：`mcs_km.ko`（无需 net/can ko），PC echo server
+  （9000/9001/9101，防火墙已放行），`netproxy_demo -f liteos_mv.elf -c 3`。

@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * net_ctrl.h - shared control block between the Linux master (mcs_net.ko)
  * and the LiteOS-M slave (net_dwmac.c) for the RK3568 GMAC1 real-time port.
  *
@@ -26,7 +28,7 @@
 #define NET_STATE_RUNNING	2
 #define NET_STATE_FAULT	3
 
-struct net_ctrl {
+struct NetCtrl {
 	u32 magic;		/* NET_CTRL_MAGIC when master is up */
 	u32 version;		/* NET_CTRL_VERSION */
 	u32 master_state;	/* written by master (mcs_net.ko) */
@@ -36,7 +38,7 @@ struct net_ctrl {
 	u32 link_up;		/* 0/1 */
 	u32 speed_mbps;		/* 100 */
 	u32 full_duplex;	/* 0/1 */
-	u32 valid;		/* snapshot has been sampled at least once */
+	u32 valid;		/* 0 while the master publishes an update, 1 = stable */
 	u64 sample_time_ns;	/* master ktime_get_boottime_ns() */
 	u32 link_changes;	/* count of link transitions observed */
 

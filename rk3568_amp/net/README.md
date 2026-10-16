@@ -4,8 +4,8 @@ Out-of-tree Linux module (Linux 6.6, OpenHarmony kernel tree) that prepares
 RK3568 **GMAC1** (`0xFE010000`, RGMII, YT8531S PHY) for the MCS AMP slave
 core and keeps the platform alive while **LiteOS-M on CPU3** owns the whole
 data plane. The slave exposes a protocol-agnostic frame-level NIC API
-(`Net*`, see the slave-side `device/board/rockchip/rk3568/liteos_new/board/
-driver/net/net.h`); any link-layer protocol (EtherCAT, proprietary, raw
+(`Net*`, see the slave-side `kernel/liteos_m/targets/rk3568_m/liteos_m/
+board/net/net.h`); any link-layer protocol (EtherCAT, proprietary, raw
 Ethernet) can run on top of it.
 
 Master responsibilities (probe, then hands off):

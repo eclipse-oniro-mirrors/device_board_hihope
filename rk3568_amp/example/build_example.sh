@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Build rpmsg_demo (master-side app-developer example) with OH clang + musl sysroot.
 # Source: example/rpmsg_demo.c (this repo).
 # Deps: device/soc/rockchip/rk3568/mcs -> libmica (headers in libmica/include,
@@ -49,11 +61,15 @@ LIB="-L$SOC/out/staging/lib -L$SOC/prebuilt/lib"
 TFLAGS="--target=aarch64-linux-ohos --sysroot=$MUSL -I$MUSL/include/aarch64-linux-ohos -B$MUSL/lib/aarch64-linux-ohos -L$MUSL/lib/aarch64-linux-ohos"
 
 mkdir -p $OUT/artifacts
-$CLANG $TFLAGS $INC -O2 -Wall -Wl,--dynamic-linker=/data/lib/ld-musl-aarch64.so.1 \
-  -o $OUT/artifacts/rpmsg_demo $ROOT/example/rpmsg_demo.c \
-  $LIB -lmica -l:libmetal.so.1 -l:libopen_amp.so.1 -lmica_compat -lpthread
+for DEMO in rpmsg_demo netproxy_demo; do
+  $CLANG $TFLAGS $INC -O2 -Wall -Wl,--dynamic-linker=/data/lib/ld-musl-aarch64.so.1 \
+    -o $OUT/artifacts/$DEMO $ROOT/example/$DEMO.c \
+    $LIB -lmica -l:libmetal.so.1 -l:libopen_amp.so.1 -lmica_compat -lpthread
+done
 
 echo BUILD_OK
-$LLVMBIN/llvm-readelf -h $OUT/artifacts/rpmsg_demo | grep -E "Class:|Machine:"
+for DEMO in rpmsg_demo netproxy_demo; do
+  $LLVMBIN/llvm-readelf -h $OUT/artifacts/$DEMO | grep -E "Class:|Machine:"
+done
 echo "-- deploy set --"
-echo "   $OUT/artifacts/rpmsg_demo -> /data; $SOC/out/artifacts/lib/* -> /data/lib (from build_libmica.sh)"
+echo "   $OUT/artifacts/{rpmsg_demo,netproxy_demo} -> /data; $SOC/out/artifacts/lib/* -> /data/lib (from build_libmica.sh)"

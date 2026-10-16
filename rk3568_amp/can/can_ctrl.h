@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * can_ctrl.h - shared control block between the Linux master (mcs_can.ko)
  * and the LiteOS-M slave (can_rk3568.c) for the RK3568 real-time CAN
  * ports. Master-side copy; the slave copy in the SDK board driver
@@ -44,7 +46,7 @@
 #define CAN_PORT_CAN1		1
 #define CAN_PORT_CAN2		2
 
-struct can_ctrl {
+struct CanCtrl {
 	u32 magic;		/* CAN_CTRL_MAGIC when master is up */
 	u32 version;		/* CAN_CTRL_VERSION */
 	u32 master_state;	/* written by master (mcs_can.ko) */
