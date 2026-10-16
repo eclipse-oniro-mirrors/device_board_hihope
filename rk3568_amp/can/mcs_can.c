@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * mcs_can.c - RK3568 CAN1/CAN2 handover driver for the MCS AMP slave core.
  *
  * One driver, one module, N ports: every mcs-canX dts node binds here and
@@ -99,7 +101,7 @@ struct mcs_can_priv {
 
 	void __iomem *can_io;		/* bus probe only, never used after */
 
-	void __iomem *ctrl;		/* shared can_ctrl block */
+	void __iomem *ctrl;		/* shared CanCtrl block */
 	u32 baudclk_hz;			/* read-back CLK_CANx rate */
 
 	/* probe state for sysfs */
@@ -113,7 +115,7 @@ static ssize_t state_show(struct device *dev, struct device_attribute *a,
 			  char *buf)
 {
 	struct mcs_can_priv *p = platform_get_drvdata(to_platform_device(dev));
-	struct can_ctrl __iomem *c = p->ctrl;
+	struct CanCtrl __iomem *c = p->ctrl;
 	int limit = p->step_fail ? p->step_fail : MCS_STEP_MAX;
 	int n = 0, i;
 
@@ -208,7 +210,7 @@ static int mcs_can_probe(struct platform_device *pdev)
 		 clk_get_rate(p->clk_apb));
 
 	/* Retarget the bit-timing clock to 100MHz and READ IT BACK: the
-	 * slave bit-timing calculator consumes can_ctrl.baudclk_hz, and the
+	 * slave bit-timing calculator consumes CanCtrl.baudclk_hz, and the
 	 * clock framework is free to land on any parent/divider that
 	 * produces the requested rate (both GPLL and CPLL divide evenly
 	 * here). Publishing the request instead of the read-back would
@@ -329,7 +331,7 @@ static int mcs_can_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	{
-		struct can_ctrl __iomem *c = p->ctrl;
+		struct CanCtrl __iomem *c = p->ctrl;
 
 		writel(0, &c->master_state);
 		writel(0, &c->slave_state);
@@ -353,7 +355,7 @@ static int mcs_can_probe(struct platform_device *pdev)
 static void mcs_can_remove(struct platform_device *pdev)
 {
 	struct mcs_can_priv *p = platform_get_drvdata(pdev);
-	volatile struct can_ctrl *c = p->ctrl;
+	volatile struct CanCtrl *c = p->ctrl;
 
 	if (c)
 		writel(CAN_CTRL_STATE_OFFLINE, &c->master_state);

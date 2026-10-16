@@ -21,8 +21,8 @@ CAN 口，结构、构建与验证方式与 `../mcs_net`（GMAC1 让渡）完全
   - **不碰 GICD、不碰 CAN 数据面寄存器**（INTID 34/35 由从核经 ArchHwiCreate
     自配置，遵循各核独占自己 GICD 的契约）。
 
-- **从核 can_rk3568.c**（morpheus 仓
-  `device/board/rockchip/rk3568/liteos_new/board/driver/can/`）：
+- **从核 can_rk3568.c**（evolve 分支
+  `kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/`）：
   全实例化多口驱动（每口一个 `CanDevice`，独立 FIFO/中断/ctrl 页）——
   工作模式（正常/回环/静默/静默回环）、位时序（bitrate 自动计算或 raw
   brp/sjw/ts1/ts2）、验收滤波、RX FIFO（6 深）、TX FIFO（单帧同步握手）

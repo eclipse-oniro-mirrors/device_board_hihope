@@ -1,4 +1,16 @@
 #!/usr/bin/env bash
+# Copyright (c) 2026 Huawei Device Co., Ltd.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 # Build mcs_can.ko (out-of-tree kernel module) against the OH linux-6.6 tree.
 # Same flow as build_mcsnet.sh; see that script for CODE autodetect.
 set -u
@@ -20,7 +32,7 @@ OBJ=$CODE/out/kernel/OBJ/linux-6.6
 [ -d $SRC ] || { echo "ERROR: built kernel not found at $SRC"; exit 1; }
 export PATH=$CODE/prebuilts/clang/ohos/linux-x86_64/llvm/bin:$PATH
 mkdir -p $OUT/logs
-cd $ROOT/mcs_can
+cd $ROOT/can
 rm -f *.o *.ko *.mod *.mod.c .*.cmd Module.symvers modules.order
 rm -rf .tmp_versions
 make -C $SRC O=$OBJ M=$PWD ARCH=arm64 CC=$CODE/prebuilts/clang/ohos/linux-x86_64/llvm/bin/clang LLVM=1 KBUILD_MODPOST_WARN=1 modules > $OUT/logs/ko-build-mcscan.log 2>&1

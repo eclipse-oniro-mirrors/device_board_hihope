@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * mcs_net.c - RK3568 GMAC1 (eth1) handover driver for the MCS AMP slave core.
  *
  * Master-side (this driver) brings the port up and keeps the platform alive:
@@ -148,7 +150,7 @@ struct mcs_net_priv {
 
 	void __iomem *mac_io;		/* only the MDIO page is used */
 
-	void __iomem *ctrl;		/* shared net_ctrl block */
+	void __iomem *ctrl;		/* shared NetCtrl block */
 	struct delayed_work link_work;
 	u32 speed_clk;			/* speed clk_mac_speed is set for */
 
@@ -314,12 +316,15 @@ static int mcs_phy_poll_link(struct mcs_net_priv *p)
 
 static void mcs_ctrl_write_link(struct mcs_net_priv *p, u32 link)
 {
-	struct net_ctrl __iomem *c = p->ctrl;
+	struct NetCtrl __iomem *c = p->ctrl;
 	u32 prev = p->link_up;
 	u16 bmcr = 0, gbsr = 0, lpa = 0;
 	u32 speed = 0, duplex = 1;
 
-	writel(link, &c->link_up);
+	/* seqlock-style publish: valid==0 marks the snapshot unstable
+	 * while it is being recomputed; the slave discards any read that
+	 * observes a 0 or a mid-read flip (net_ctrl.h contract). */
+	writel(0, &c->valid);
 
 	/*
 	 * Resolved speed/duplex (phylib genphy_read_status semantics):
@@ -352,15 +357,16 @@ static void mcs_ctrl_write_link(struct mcs_net_priv *p, u32 link)
 		}
 	}
 
+	writel(link, &c->link_up);
 	writel(speed, &c->speed_mbps);
 	writel(duplex, &c->full_duplex);
-	writel(1, &c->valid);
 	writeq(ktime_get_boottime_ns(), &c->sample_time_ns);
 	if (prev != link) {
 		p->link_changes++;
 		writel(p->link_changes, &c->link_changes);
 	}
 	p->link_up = link;
+	writel(1, &c->valid);		/* snapshot stable: publish last */
 
 	/*
 	 * clk_mac_speed must track the resolved speed (dwmac-rk
@@ -396,7 +402,7 @@ static ssize_t state_show(struct device *dev, struct device_attribute *a,
 			  char *buf)
 {
 	struct mcs_net_priv *p = platform_get_drvdata(to_platform_device(dev));
-	struct net_ctrl __iomem *c = p->ctrl;
+	struct NetCtrl __iomem *c = p->ctrl;
 	int limit = p->step_fail ? p->step_fail : MCS_STEP_MAX;
 	int n = 0, i;
 
@@ -643,7 +649,7 @@ static int mcs_net_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	{
-		struct net_ctrl __iomem *c = p->ctrl;
+		struct NetCtrl __iomem *c = p->ctrl;
 
 		writel(0, &c->master_state);
 		writel(0, &c->valid);
@@ -671,7 +677,7 @@ static int mcs_net_probe(struct platform_device *pdev)
 static void mcs_net_remove(struct platform_device *pdev)
 {
 	struct mcs_net_priv *p = platform_get_drvdata(pdev);
-	struct net_ctrl __iomem *c = p->ctrl;
+	struct NetCtrl __iomem *c = p->ctrl;
 
 	cancel_delayed_work_sync(&p->link_work);
 	if (c)
