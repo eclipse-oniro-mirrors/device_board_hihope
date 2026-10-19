@@ -3,7 +3,7 @@
 > 对象：在 RK3568（toybrick/DAYU210）AMP 双系统上，把 GMAC1 让渡给 LiteOS-M
 > 实时核（CPU3）作为**协议无关实时网口**使用的协议开发者/集成者。
 > 主核侧驱动：本目录 `mcs_net.c`（Linux 6.6 out-of-tree 模块）。
-> 从核侧驱动：`device/board/rockchip/rk3568/liteos_new/board/driver/net/`
+> 从核侧驱动：`kernel/liteos_m/targets/rk3568_m/liteos_m/board/net/`
 > （`net.h` 公开 API + `net_dwmac.c` 实现）。
 > 设计细节见 `mcs_net.c` 头部注释（本文只讲"怎么用"）。
 
@@ -166,7 +166,7 @@ cat /sys/devices/platform/mcs-net-gmac1/mdio
 从核侧使能：板级 Kconfig `MCS_NET`（依赖 `MCS`），vendor config 打开
 `LOSCFG_MCS_NET=y`（当前该开关同时编入 `net_test.c` 用户 demo，见 5.3）。
 
-> **注意**：`LOSCFG_MCS_NET` 已在 morpheus 默认开启
+> **注意**：`LOSCFG_MCS_NET` 已在从核源码树默认开启
 > （`vendor/rockchip/rk3568_amp/kernel_configs/*.config`）。90a4b6251
 > 基线上曾默认注释（UART 台架验证期间），旧基线源码构建需手动取消
 > 注释；从核 SDK 包内 `config.h` 一直默认打开。
@@ -174,7 +174,7 @@ cat /sys/devices/platform/mcs-net-gmac1/mdio
 协议代码只需要：
 
 ```c
-#include "net.h"     // device/board/rockchip/rk3568/liteos_new/board/driver/net/
+#include "net.h"     // kernel/liteos_m/targets/rk3568_m/liteos_m/board/net/
 ```
 
 `NetDevice` 对协议层**不透明**（内部为板级驱动的设备实例），不要解引用。
@@ -392,7 +392,7 @@ irq<中断> dma<异常> link=<0|1>/<速率>M/<FD|HD>`，正常输出形如：
 收发缓冲**全部由从核侧静态划定**，主核不参与：
 
 - 位置：`NET_DMA_BASE = 0x76000000`，2MB **Normal Non-Cacheable** 窗口
-  （`kernel/liteos_new/arch/arm64/los_mmu.c` 里以独立 L2 block 映射，
+  （`kernel/liteos_m/arch/arm64/los_mmu.c` 里以独立 L2 block 映射，
   恒等映射 PA==VA，DMA 编程地址即物理地址）。
 - 为什么不在固件 BSS：从核 D-cache 已使能，普通镜像内存是 Normal-WB
   **非 DMA 一致**（GMAC 无 IO-coherent），描述符/缓冲必须放 NC 窗口。

@@ -2,10 +2,11 @@
 
 > 对象：在 RK3568（toybrick/DAYU210）AMP 双系统上，把 CAN1（默认）与
 > CAN2（**接口预留扩展，尚未上板硬件验证**——可选，需在 dts 启用）让渡给 LiteOS-M 实时核（CPU3）作为**协议无关
-> 实时 CAN 口**使用的协议开发者/集成者。两口可**并发**使用。
+> 实时 CAN 口**使用的协议开发者/集成者。支持经典 CAN 2.0B 与 **CAN FD**
+> （可变波特率 BRS、最长 64 字节载荷）。两口可**并发**使用。
 > 主核侧驱动：本目录 `mcs_can.c`（Linux 6.6 out-of-tree 模块，单模块多口：
 > dts 节点的 compatible 选口）。
-> 从核侧驱动：morpheus 仓 `device/board/rockchip/rk3568/liteos_new/board/driver/can/`
+> 从核侧驱动：`kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/`
 > （`can.h` 公开 API + `can_rk3568.c` 实现，每口一个 `CanDevice` 实例）。
 > 设计细节见 `mcs_can.c` / `can_rk3568.c` 头部注释（本文只讲"怎么用"）。
 
@@ -15,13 +16,15 @@
 
 ### 1.1 这是什么
 
-RK3568 内置两个 CAN 控制器（经典 CAN 2.0B 模式，非 CAN FD）。默认归 Linux；
+RK3568 内置两个 CAN 控制器（经典 CAN 2.0B + CAN FD 数据通路）。默认归 Linux；
 本方案把 CAN 控制器的整个数据面**让渡**给运行 LiteOS-M 的实时核 CPU3，用于
 J1939、CANopen 等对确定性敏感的协议。**CAN1**（`0xFE580000`，can1m1 引脚组）
 默认让渡；**CAN2**（`0xFE590000`，can2m0 引脚组）为可选让渡（dts 中默认
 disabled，按需启用），两口独立 fifo/中断/控制块，可并发运行。驱动只提供**帧
 级收发接口**，不绑定任何上层协议——协议栈只链接 `can.h`，自行组织帧内容
-（与网卡 `net.h` 同一设计哲学）。
+（与网卡 `net.h` 同一设计哲学）。经典帧与 FD 帧同 API 收发：`CanInit` 时
+`fd_enable=1` 即启用 CAN FD 数据通路（数据相位位速率、TDC 自动配置），
+`CanFrame` 用 `CAN_FRAME_FDF` / `CAN_FRAME_BRS` 标记 FD 帧（详见 §4.3）。
 
 ```
                 RK3568 (4 x Cortex-A55)
@@ -192,7 +195,7 @@ pinmux/总线探活/ctrl 发布）；`port=N` 行标明该节点绑定的控制�
 ## 4. 从核侧 API 参考（协议层视角）
 
 ```c
-#include "can.h"   // device/board/rockchip/rk3568/liteos_new/board/driver/can/
+#include "can.h"   // kernel/liteos_m/targets/rk3568_m/liteos_m/board/can/
 ```
 
 共 7 个接口，全部无动态内存、可重入于单任务上下文（Recv/GetStats 可从
@@ -207,8 +210,15 @@ typedef struct {
     uint32_t mode;           /* 收包模式（见 4.1.1） */
     uint32_t work_mode;      /* 总线工作模式（见 4.1.2） */
     uint32_t use_raw_timing; /* 0 = bitrate 自动求解（默认） */
-    uint32_t bitrate;        /* bits/s，默认 500000 */
+    uint32_t bitrate;        /* 标称相位 bits/s，默认 500000（CAN_DEFAULT_BITRATE） */
     CanBittiming timing;     /* raw brp/sjw/ts1/ts2（use_raw_timing=1 时生效） */
+    /* --- CAN FD（可选，默认全 0 = 经典 CAN 2.0B） --- */
+    uint32_t fd_enable;      /* 1 = 启用 FD 数据通路：配置 DBTP 数据相位位时序
+                                 + TDC（正常模式），允许 FDF/BRS 帧收发；
+                                 经典帧继续可用 */
+    uint32_t data_bitrate;   /* FD 数据相位 bits/s，默认 2000000
+                                 （CAN_DEFAULT_DATA_BITRATE） */
+    CanBittiming data_timing;/* raw 数据相位时序（use_raw_timing=1 时生效） */
     uint32_t filter_en;      /* 0 = 全收（默认） */
     uint32_t filter_code;    /* 验收码（29-bit id 空间） */
     uint32_t filter_mask;    /* 验收屏蔽：掩码位不参与比较；0 = 精确匹配 code */
@@ -240,6 +250,12 @@ typedef struct {
   返回 `-EINVAL`）。
 - **raw 风格**：`use_raw_timing=1` 时 `brp/sjw/ts1/ts2` 直写 NBTP（偶数
   brp 2..512、各段 1..128，范围外返回 `-EINVAL`），供时序专家微调。
+- **FD 数据相位**（`fd_enable=1`）：`data_bitrate` 求解 DBTP（字段范围更窄：
+  tseg1 1..32、tseg2 1..16、sjw 1..16），采样点取 ~80%（CiA 数据段惯例）；
+  默认 2Mbps（100MHz 下 brp=2/ts1=20/ts2=4）。同样支持 raw 风格
+  （`data_timing`）。**TDC（发送延迟补偿）自动编程**：正常总线模式按主线
+  公式 offset = baudclk/dbitrate×2/3；回环模式**自动关闭**（内部回环无物理
+  收发延迟，TDC 反而使 BRS 帧采样错位导致发送悬挂，实测钉死，见 §6.2）。
 
 ### 4.2 API 一览
 
@@ -248,7 +264,7 @@ typedef struct {
 | `CanInit(cfg, &dev)` | 按 `cfg->port_id` 选口 + 校验配置 + 主核门禁 + 软复位模式编程（滤波/FIFO/模式位/位时序），停在 READY。RUNNING 中需先 Stop；口未让渡返回 `-ENODEV` |
 | `CanStart(dev)` | 注册该口 INTID（CAN1: 34 / CAN2: 35，IRQ/HYBRID）+ 开中断掩码（POLL 全掩）+ 退出软复位上总线 |
 | `CanStop(dev, timeout_us)` | 掩全部中断 → 回软复位 → 注销 IRQ → 清就绪队列（无 DMA，即刻静止） |
-| `CanSend(dev, frame, timeout_us)` | 同步发一帧：单帧深 TX FIFO 握手，有界等待完成（超时 `-ETIMEDOUT`） |
+| `CanSend(dev, frame, timeout_us)` | 同步发一帧（经典或 FD）：单帧深 TX FIFO 握手，有界等待完成（超时 `-ETIMEDOUT`）；发送前做契约校验（FD 帧需 `fd_enable`、RTR+FD 拒绝、`len` 合法） |
 | `CanRecv(dev, frame)` | 非阻塞收一帧；无帧返回 `-EAGAIN`（POLL/HYBRID 先收割硬件 FIFO） |
 | `CanGetBusState(dev, &info)` | 总线状态快照（error-active/warning/passive/bus-off + 错误计数） |
 | `CanGetStats(dev, &stats)` | 收发统计（见 4.4） |
@@ -258,15 +274,23 @@ typedef struct {
 ```c
 typedef struct {
     uint32_t id;        /* 11-bit 0x0..0x7ff；带 EFF 时 29-bit 0x0..0x1fffffff */
-    uint8_t  flags;     /* CAN_FRAME_EFF（扩展帧）| CAN_FRAME_RTR（远程帧） */
-    uint8_t  dlc;       /* 数据长度 0..8（>8 返回 -EMSGSIZE） */
+    uint8_t  flags;     /* CAN_FRAME_EFF（扩展帧）| CAN_FRAME_RTR（远程帧，
+                           仅经典帧）| CAN_FRAME_FDF（FD 帧）| CAN_FRAME_BRS
+                           （数据相位变速，需 FDF） */
+    uint8_t  len;       /* 数据字节数：经典帧 0..8；FD 帧 0..64（合法长度
+                           0..8/12/16/20/24/32/48/64，驱动自动映射 4-bit
+                           DLC 码 9..15，非法定长返回 -EMSGSIZE） */
     uint8_t  reserved;
-    uint8_t  data[8];   /* RTR 帧不含数据（比较时跳过） */
+    uint8_t  data[64];  /* FD 最长 64 字节；RTR 帧不含数据（比较时跳过） */
 } CanFrame;
 ```
 
-经典 CAN 2.0B：标准/扩展 id、数据/远程帧、0..8 字节。**CAN FD 不支持**
-（RK3568 CAN IP 以 2.0 模式使用；收到 FDF 位置位的帧计 `rx_errors`）。
+- **经典 CAN 2.0B**：标准/扩展 id、数据/远程帧、0..8 字节——`fd_enable=0`
+  （默认）即纯经典模式，行为与历史版本一致。
+- **CAN FD**（`fd_enable=1`）：`CAN_FRAME_FDF` 帧 0..64 字节；`CAN_FRAME_BRS`
+  表示载荷按 `data_bitrate` 发送（需 FDF）。RTR 仅经典帧（FD 帧 + RTR 返回
+  `-EINVAL`）。FD 帧要求该口 `fd_enable=1`，否则 `CanSend` 返回 `-ENOTSUP`；
+  未开 FD 的口收到总线上的 FD 帧则**丢弃**并计 `rx_dropped`（主线行为）。
 
 验收滤波（单 code/mask 组，作用于 29-bit id 空间）：
 `filter_en=1` 时收 `(id & ~mask) == (code & ~mask)` 的帧；`mask=0` 精确
@@ -283,7 +307,8 @@ typedef struct {
 | `-EBUSY`（-16） | RUNNING 中重复 Init（先 Stop） |
 | `-EIO`（-5） | 未 Start 就 Send/Recv，或 Start 时 IRQ 注册失败 |
 | `-ETIMEDOUT`（-110） | 发送有界等待超时（如 LOOPBACK 之外无应答的死总线） |
-| `-EMSGSIZE`（-90） | dlc > 8 |
+| `-EMSGSIZE`（-90） | `len` 非法：经典帧 >8，或 FD 帧不在 {0..8,12,16,20,24,32,48,64} |
+| `-ENOTSUP`（-95） | FDF/BRS 帧但该口 `fd_enable=0`（未启用 FD 数据通路） |
 
 `CanStats` 关键字段：`tx_accepted/tx_completed/tx_timeouts`（发送三态）、
 `rx_delivered/rx_dropped/rx_errors`（接收通路）、`rx_dup_suppressed`
@@ -310,9 +335,10 @@ typedef struct {
 
 ### 5.3 内置用户 demo（can_test.c）解读
 
-`LOSCFG_MCS_CAN` 打开时 `main.c` 自动拉起，13 阶段全片内回环（零硬件）：
+`LOSCFG_MCS_CAN` 打开时 `main.c` 自动拉起，18 阶段全片内回环（零硬件）：
 
 ```
+经典 CAN 2.0B（fd_enable=0）：
 lb-irq-500k    20 帧，IRQ 接收 + 500kbps     （自协商求解时序）
 lb-poll-500k   20 帧，纯轮询（无中断注册）
 lb-hyb-500k    20 帧，HYBRID 接收（ISR 抢收 + Recv 兜底，irq 计数 >0）
@@ -322,15 +348,25 @@ lb-bd-1m       10 帧，1Mbps
 lb-raw-500k    10 帧，raw brp/sjw/ts1/ts2（=500k 求解值）
 lb-ext-data    10 帧，扩展 id（29-bit）数据帧
 lb-std-rtr     10 帧，标准 id 远程帧
-lb-dlc-sweep   18 帧，dlc 0..8 边界扫描
+lb-dlc-sweep   18 帧，len 0..8 边界扫描
 lb-flt-even    20 帧，验收滤波：code/mask 只放行偶数 id——奇数 id 必须在
                硬件滤波器中消失（~10ms 静默窗口内 Recv 不得返回帧，泄漏即
                失败），偶数 id 正常回显校验；预期 echoed 10 / filtered 10
-lb2-irq-500k   20 帧，CAN2 口 IRQ 接收（可选：口未让渡时 skipped）
-lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
+
+CAN FD（fd_enable=1，500k 仲裁 + 2M 数据相位）：
+lb-fd-64b      10 帧，FDF + 64 字节满载荷（无 BRS，数据相位同仲裁速率）
+lb-fd-brs-2m   10 帧，FDF + BRS（数据相位 2Mbps，含 TDC 回环禁用路径）
+lb-fd-sweep    16 帧，FDF + BRS，len 全部 16 种合法长度 0..8/12/16/20/24/
+               32/48/64 逐档回显校验（DLC 9..15 码映射往返）
+lb-fd-poll-2m  10 帧，FDF + BRS + 纯轮询接收（FD 数据通路与 POLL 组合）
+lb-fd-ext-2m   10 帧，FDF + BRS + 扩展 id（29-bit）FD 帧
+
+CAN2 口（可选：口未让渡时 skipped）：
+lb2-irq-500k   20 帧，CAN2 口 IRQ 接收
+lb2-poll-500k  20 帧，CAN2 口纯轮询（同上）
 ```
 
-每帧 Send 后有限重试收回显并逐字段比对（id/flags/dlc/payload）。判定：
+每帧 Send 后有限重试收回显并逐字段比对（id/flags/len/payload）。判定：
 每阶段 `Stop: 0 (sent N, echoed N [+ filtered K], errors 0)` + stats 行
 `rx dN = tx aN`、`dup0`、`to0`，结尾 `[can] all phases done` 无
 `WITH FAILURES` 即全绿。demo 同时也是协议任务的参考模板——把
@@ -357,23 +393,40 @@ lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
   `CAN_RAW_RECV_OWN_MSGS` 行为一致。
 - **重复帧抑制**：LBACK+RXSTX 下自发帧可能以两份 FIFO 元素出现（时间
   邻近）。驱动按 FIFO 时间戳窗口（25µs @100MHz ts）自动吞掉第二份
-  （任何合法重复帧在支持的最高速率下不可能 25µs 内完成——dlc0@1M 也要
-  ~47µs，无误吞风险），计入 `rx_dup_suppressed`。
+  （任何合法重复帧在支持的最高速率下不可能 25µs 内完成——经典 len0@1M
+  也要 ~47µs；FD 帧仲裁段仍走标称速率，len0@500k/2M 总时长更长，无误吞
+  风险），计入 `rx_dup_suppressed`。
 - **erratum 5（RX FIFO 计数器滞后）**：pop 一帧后 RXFC 计数器不立即归零，
   立即重读会弹出幽灵元素。驱动在 drain 的每次 pop 后沉降 ~20µs 再读
   （`can_settle_delay`），实测彻底消除（最终验证 `dup0` 且无错帧）。
 
 ### 6.2 其他硅片行为
 
+- **TDC（发送延迟补偿）与回环互斥（FD，实测钉死）**：TDC 是为**真实总线**
+  上收发器环回延迟设计的——发送器提前采样数据相位。但片内 LOOPBACK 没有
+  物理延迟，开 TDC 反而把数据相位采样点推迟到位时间之外，BRS 帧 CRC 校验
+  失败→无限重传→TX 永久悬挂（实测现象：BRS 帧全部 `-110` 超时）。驱动已
+  自动规避：`CanInit` 时 LOOPBACK/SILENT_LB 模式写 TDC=0，NORMAL 模式才按
+  主线公式编程 offset。旁证：主线 rkcanfd 源码中仅 rk3588 被注释
+  "CAN-FD BRS works with TDC disabled"，rk3568 因 erratum 从未验证过 FD。
+- **CAN IP 版本**：`CanInit` 读 RTL_VERSION（0x70）打印（本板实测
+  **rtl v2.2**）。主线以 cpu_version<3 区分 V1/V2 硅片行为（见下条）。
+- **rk3568 FD 背景声明**：主线 rkcanfd 对 rk3568 挂
+  `RKCANFD_QUIRK_CANFD_BROKEN`（datasheet 未承诺 FD），即主线内核不给
+  rk3568 开 FD。本驱动的 FD 能力以**本板 RTL v2.2 片内回环实测**为准
+  （BRS@2M、16 种合法长度、POLL/IRQ、扩展 id 全绿，见 §9）；**真实总线**
+  （外接收发器）上的 FD 行为尚未上板验证——产品如需真实总线 FD，建议先
+  小规模试点再放量。
 - **V1 硅片 EXT 帧自发回环**（cpu_version<3）：正常模式下自发**扩展帧**
   也会回环进 RX FIFO（内核驱动带软件规避）。本驱动不处理（仅影响外接
   总线 + 扩展 id 场景，回环 demo 无此问题）。cpu_version 经 ctrl 块发布
   （0 = 未知：本内核未开 CONFIG_ROCKCHIP_CPUINFO）。
-- **V1 空帧**：RX 通路可能交付 dlc==0 && id==0 的空帧，驱动按内核同款
+- **V1 空帧**：RX 通路可能交付 len==0 && id==0 的空帧，驱动按内核同款
   逻辑跳过。
 - **800kbps 不可达**（100MHz 位时钟数学约束，见 4.1.3）。
 - **TX FIFO 单帧深**：CanSend 同步握手，不排队——连续发送即逐帧等待，
-  500kbps 一帧最坏 ~260µs（dlc8），调用方按此预算超时。
+  500kbps 一帧最坏 ~260µs（len8），调用方按此预算超时；FD BRS 帧按数据
+  相位速率缩短（2M 下 64 字节载荷数据段 ~300µs）。
 
 ---
 
@@ -413,6 +466,9 @@ lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
 | RX 恒 0 但 TX 正常 | 对端未发帧/滤波配置过严（`filter_en` 关掉试试）/SILENT 模式忘记切回 |
 | 回环模式下偶发 mismatch | 不应发生；若复现记录 `dup-miss` 哨兵打印并反馈（去重窗口需调整） |
 | demo 后期 rx 不再增长 | 检查 `[can] ... rx dN` 是否与 tx 对齐；`rx_overflow` 非零=任务消费不及时（提优先级或改 POLL） |
+| `CanSend` 返回 -95（-ENOTSUP） | FDF/BRS 帧但 `CanInit` 时未置 `fd_enable=1`；重新 Init 配置 |
+| `CanSend` 返回 -90（-EMSGSIZE） | FD 帧 `len` 不在 {0..8,12,16,20,24,32,48,64} 合法集合；经典帧 `len>8` |
+| FD BRS 帧回环发送 -110 超时 | 驱动已自动规避（回环禁 TDC，见 §6.2）；若复现记录 diag 寄存器打印并反馈 |
 
 ---
 
@@ -421,7 +477,7 @@ lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
 - **CAN-only 固件**（2026-10-07）：9 阶段全绿——`sent=echoed`（20/20/10/
   10/10/10/10/10/18）、errors 0、`dup0`（erratum 5 沉降修复后幽灵元素
   消除）、`to0`；IRQ/POLL 双收包模式、125k~1M 四档波特率、raw 时序、
-  扩展帧、RTR、dlc 0..8 扫描全通过。
+  扩展帧、RTR、len 0..8 扫描全通过。
 - **混合固件（NET+CAN 同开）**（2026-10-07）：CAN 9 阶段同样全绿；
   NET demo（强制 100M FD + POLL）并行运行 link=1/100M/FD、tx 千帧级
   无错、rx 正常收包；两驱动共存无干扰，rpmsg 通道正常（rtt ~108µs）。
@@ -439,5 +495,16 @@ lb2-poll-500k  20 帧，CAN2 口纯轮询（可选：同上）
   证明 LOOPBACK+RXSTX 回显路径同样过硬件滤波器。同轮修复驱动滤波分支
   `mask=0` 语义（此前 fallthrough 全开，现为精确匹配 code，对齐 §4.1
   契约）；其余 9 个 CAN1 阶段与上轮逐项一致，`all phases done` 无失败。
+- **CAN FD 支持**（2026-10-15）：demo 扩至 18 阶段（13 经典 + 5 FD），
+  `CanInit` 打印 CAN1 IP **rtl v2.2**。FD 五阶段全绿：`lb-fd-64b`
+  10/10（64 字节满载荷）、`lb-fd-brs-2m` 10/10（BRS 数据相位 2Mbps）、
+  `lb-fd-sweep` **16/16**（全部 16 种合法长度 DLC 9..15 映射往返）、
+  `lb-fd-poll-2m` 10/10（POLL + FD）、`lb-fd-ext-2m` 10/10（29-bit
+  扩展 id FD 帧）；经典 13 阶段回归逐项一致（CAN2 两阶段 skipped 为
+  设计行为），`all phases done` 无失败。本轮关键修复：**回环模式禁用
+  TDC**——首轮 `lb-fd-brs-2m` 全部 -110（TX 悬挂），根因为片内回环无
+  物理收发器延迟、TDC offset 把数据相位采样点推出位时间，BRS 帧 CRC
+  失败无限重传；修复后全绿（详见 §6.2）。FD 真实总线（外接收发器）
+  行为待产品试点验证。
 - 回归环境：`mcs_km.ko + mcs_can.ko`（混合另加 `mcs_net.ko`），
   `rpmsg_demo -f liteos-*.elf -c 3`，串口 1500000。

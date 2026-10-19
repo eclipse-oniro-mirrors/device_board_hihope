@@ -31,15 +31,16 @@
 |---|---|---|
 | **device_board_hihope**（板级） | `$CODE/device/board/hihope`，目录 `rk3568_amp/` | `net/`（网卡让渡 ko）、`can/`（CAN 让渡 ko）、`dts/`、`patches/`、`example/`（rpmsg_demo）、`slave_boot/`、`USER_GUIDE.md` / `API.md` 等文档 |
 | **device_soc_rockchip**（架构） | `$CODE/device/soc/rockchip`，目录 `rk3568/mcs/` | `mcs_km/`（ko 源码）、`libmica/`（用户态框架源码）、`libmica-compat/`、`prebuilt/`（libmetal/open-amp 预编译二进制 + 头文件 + 适配补丁）、`scripts/` |
-| **morpheus**（从核侧） | `https://gitcode.com/pb28/morpheus`，分支 `rk3568_amp_hfx` | `kernel/liteos_new`（LiteOS-M 内核 + `compat/mcs/` 从核组件：openamp 适配 + libmica 从核版 + tty/umt/echo 服务）、`device/board/rockchip/rk3568/liteos_new`（板级） |
+| **从核源码**（evolve 分支多仓） | OpenHarmony **evolve 分支**（`OpenHarmony_liteos_evolve_20260924`）repo 工作区 | `kernel/liteos_m`（LiteOS-M 内核 + `compat/mcs/` 从核组件：openamp 适配 + libmica 从核版 + tty/umt/echo 服务；`targets/rk3568_m/liteos_m/board` 板级与 can/net 实时驱动），配套 `device/board/hihope/rk3568_m`、`device/soc/rockchip/rk3568_m`、`vendor/hihope/rk3568_m`（Kconfig/部件注册） |
 
 ```bash
 # 主核侧：两仓在 OH 树内（repo 工作区或单独 clone 后放入）
 git clone -b <分支> <hihope 仓地址> $CODE/device/board/hihope
 git clone -b <分支> <soc 仓地址>   $CODE/device/soc/rockchip
 
-# 从核侧：独立仓，任意目录
-git clone -b rk3568_amp_hfx https://gitcode.com/pb28/morpheus.git ~/code/morpheus
+# 从核侧：evolve 分支 repo 工作区（从核多仓协同演进）
+repo init -u <manifest-url> -b OpenHarmony_liteos_evolve_20260924
+repo sync -c
 ```
 
 > 从核侧另有**二进制 SDK 包**（`rk3568_amp_slave_sdk.tar.gz`）：内核/openamp/libmetal/
@@ -56,17 +57,16 @@ git clone -b rk3568_amp_hfx https://gitcode.com/pb28/morpheus.git ~/code/morpheu
 | `CODE` 变量 | 脚本自动从自身位置向上探测 OH 树根（含 `prebuilts/` 的目录）；树外使用时 `export CODE=<OH 树根>` |
 | 板子镜像 | **必须包含 oh_rt 预留资源**（CPU3 内存/共享内存/中断），见 6.1 |
 
-## 4. 从核侧编译（morpheus 仓）
+## 4. 从核侧编译（evolve 分支源码树）
 
-方式一（源码，hb 构建，产品 `rk3568_amp` 已内置全部配置）：
+方式一（源码，产品级构建，产品 `rk3568_m` 已内置全部配置）：
 
 ```bash
-cd ~/code/morpheus
-PYTHONPATH=$PWD/build python3 build/hb/main.py build --product-name rk3568_amp
+cd <evolve 工作区>
+./build.sh --product-name rk3568_m
 
-# 产物（unstripped 版带符号，便于 addr2line）：
-out/rk3568_amp/rk3568_amp/obj/kernel/liteos_new/unstripped/bin/liteos
-cp out/rk3568_amp/rk3568_amp/obj/kernel/liteos_new/unstripped/bin/liteos liteos-m.elf
+# 产物（out/ 下另有带符号版本，便于 addr2line）：
+cp out/rk3568_m/rk3568_m/OHOS_Image liteos-m.elf
 ```
 
 方式二（SDK 包，只需 OH clang 15.0.4 工具链）：
@@ -159,7 +159,7 @@ hdc tconn 192.168.100.10:8710
 hdc file send $CODE/device/soc/rockchip/rk3568/mcs/mcs_km/mcs_km.ko /data/
 hdc file send $CODE/device/board/hihope/rk3568_amp/out/artifacts/rpmsg_demo /data/
 hdc file send $CODE/device/soc/rockchip/rk3568/mcs/out/artifacts/lib/* /data/lib/
-hdc file send ~/code/morpheus/liteos-m.elf /data/liteos-m.elf
+hdc file send <evolve>/out/rk3568_m/rk3568_m/OHOS_Image /data/liteos-m.elf
 
 # 板上（串口或 hdc shell）：
 insmod /data/mcs_km.ko
@@ -229,7 +229,7 @@ Creating ECHO thread...
 ## 8. 提交规范（给要改代码的同事）
 
 - 主核侧：hihope 仓，分支 `OpenHarmony_oh2b_mxs_20260908`；commit 需带 `Signed-off-by`（DCO），邮箱与账号绑定邮箱一致
-- 从核侧：morpheus 仓（`rk3568_amp_hfx` 分支），正常 git flow
+- 从核侧：evolve 分支各仓（`kernel/liteos_m` 等），正常 git flow，提 PR 合入 `OpenHarmony_liteos_evolve_20260924`
 - `mcs/out/` 构建产物已 gitignore，不上传
 - Change-Id 由 repo 工具的 commit-msg hook 自动生成；单独 clone 的仓从 repo 工作区 `$CODE/repo/hooks/commit-msg` 拷到 `.git/hooks/`
 
@@ -240,5 +240,5 @@ Creating ECHO thread...
 - `$CODE/device/board/hihope/rk3568_amp/API.md` — libmica 应用接口
 - `$CODE/device/soc/rockchip/rk3568/mcs/README.md` — 架构仓结构与 prebuilt 重编方法
 - `$CODE/device/board/hihope/rk3568_amp/example/README.md` — 主从核通信应用开发指南（rpmsg_demo）
-- `morpheus/kernel/liteos_new/compat/mcs/README.md` — 从核组件与裁剪记录
+- `kernel/liteos_m/compat/mcs/README.md`（evolve 分支）— 从核组件与裁剪记录
 - 从核 SDK 包内 `README.md` — SDK 使用说明

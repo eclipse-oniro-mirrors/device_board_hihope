@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
+ * Copyright (c) 2026 Huawei Device Co., Ltd.
+ *
  * RK3568 GMAC1 handover dts fragment (master side).
  *
  * Part of the MCS AMP NIC handover: disables the Linux eth1 (stmmac)
