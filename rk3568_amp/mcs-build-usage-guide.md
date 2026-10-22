@@ -29,7 +29,7 @@
 
 | 仓 | 位置 | 内容 |
 |---|---|---|
-| **device_board_hihope**（板级） | `$CODE/device/board/hihope`，目录 `rk3568_amp/` | `net/`（网卡让渡 ko）、`can/`（CAN 让渡 ko）、`dts/`、`patches/`、`example/`（rpmsg_demo）、`slave_boot/`、`USER_GUIDE.md` / `API.md` 等文档 |
+| **device_board_hihope**（板级） | `$CODE/device/board/hihope`，目录 `rk3568_amp/` | `net/`（网卡让渡 ko）、`can/`（CAN 让渡 ko）、`uart/`（UART3 让渡 ko）、`dts/`、`patches/`、`example/`（rpmsg_demo / netproxy_demo）、`slave_boot/`、`USER_GUIDE.md` / `API.md` 等文档 |
 | **device_soc_rockchip**（架构） | `$CODE/device/soc/rockchip`，目录 `rk3568/mcs/` | `mcs_km/`（ko 源码）、`libmica/`（用户态框架源码）、`libmica-compat/`、`prebuilt/`（libmetal/open-amp 预编译二进制 + 头文件 + 适配补丁）、`scripts/` |
 | **从核源码**（evolve 分支多仓） | OpenHarmony **evolve 分支**（`OpenHarmony_liteos_evolve_20260924`）repo 工作区 | `kernel/liteos_m`（LiteOS-M 内核 + `compat/mcs/` 从核组件：openamp 适配 + libmica 从核版 + tty/umt/echo 服务；`targets/rk3568_m/liteos_m/board` 板级与 can/net 实时驱动），配套 `device/board/hihope/rk3568_m`、`device/soc/rockchip/rk3568_m`、`vendor/hihope/rk3568_m`（Kconfig/部件注册） |
 
@@ -91,6 +91,7 @@ cd $CODE/device/board/hihope/rk3568_amp
 ./example/build_example.sh        # 4. rpmsg_demo（应用示例，动态链接）→ out/artifacts
 ./net/build_mcsnet.sh             # 5. mcs_net.ko（网卡让渡，可选）→ net/
 ./can/build_mcscan.sh             # 6. mcs_can.ko（CAN 让渡，可选）→ can/
+./uart/build_mcsuart.sh           # 7. mcs_uart.ko（UART3 让渡，可选）→ uart/
 ```
 
 产物清单：
@@ -209,6 +210,42 @@ Creating ECHO thread...
 /data/slave_boot -f /data/liteos-m.elf -c 3 -K     # 拉起后保持运行（keep-alive）
 ```
 
+### 6.6 UART3 让渡（可选，实时串口）
+
+与 GMAC1/CAN 的"资源服务型"让渡不同，UART3 采用**先探活、后逐出**：
+GPIO3_C0（RX）的输入通路依赖 Linux 8250_dw probe 框架完成的焊盘初始化，
+从核裸写 GRF（IOMUX+PULL 同值）无法复现（liteos_m issue 1014 根因）。
+流程：dts uart3=okay → boot 时 8250_dw 绑定探活 → mcs_uart.ko 释放驱动
+（等效 sysfs unbind，焊盘保持已初始化态）→ 从核接管。详见 `uart/README.md`。
+
+```bash
+# 镜像前提：板上 dtb 的 uart3 为 status="okay"（rk3568_dts_ohrt.patch
+# 已包含；用旧版 patch 构建的镜像需重打补丁烧录）
+
+# 板上（boot 完成后、启动从核前）：
+insmod /data/mcs_uart.ko
+dmesg | grep mcs_uart
+#   [mcs-uart] step dev: OK (fe670000.serial present)
+#   [mcs-uart] step bind: OK ('fe670000.serial' probed, pads up)
+#   [mcs-uart] step release: OK - 'fe670000.serial' free for the AMP slave (pads stay configured)
+ls /sys/bus/platform/drivers/dw-apb-uart/           # 输出中无 fe670000.serial
+
+# 从核验证（§4 的 rk3568_m 产品镜像含 uart_test demo；netproxy_demo
+# 提供 PTY 桥接从核 shell）：
+hdc file send $CODE/device/board/hihope/rk3568_amp/out/artifacts/netproxy_demo /data/
+cd /data && LD_LIBRARY_PATH=/data/lib setsid /data/lib/ld-musl-aarch64.so.1 \
+    ./netproxy_demo -f /data/liteos-m.elf -c 3 -n 3 \
+    </dev/null >/data/np.log 2>&1 &
+grep -a "tty bridge" /data/np.log                   # → /dev/pts/0
+echo "uart_test 3 self 115200 256" > /dev/pts/0     # MCR 内环：PASS（isr=480 基线）
+echo "uart_test 3 115200 256"    > /dev/pts/0       # 片外跳线回环（GPIO3_B7↔C0）：PASS
+```
+
+> ⚠️ **从核侧严禁复位 UART 控制器**（SRR / CRU SOFTRST 均会撤销探活态，
+> 外部回环立即失效）。从核驱动（evolve 分支 targets/rk3568_m board/
+> uart.c）已按此约束实现（复位块 `#if 0` 禁用），勿重新启用。
+> 换口/多口：`insmod mcs_uart.ko port=<reg基址>.serial`（默认 fe670000.serial）。
+
 ## 7. 常见问题（FAQ）
 
 1. **脚本报 `export CODE=<OpenHarmony full source tree root>`？**
@@ -225,6 +262,11 @@ Creating ECHO thread...
    正常路径 demo 会自动下电从核（`slave core powered off`）后退出。若上次异常退出，从核可能残留上电状态，重新 reboot 板子后重试。
 7. **串口刷屏 / 网络不通？**
    reboot 后需重新执行 6.2 的两条命令（非持久配置）。
+8. **UART3 外部回环不通（rx=0，TX 正常）？**
+   按让渡链路逐项检查：① 板上 dtb uart3=okay（旧镜像需重打补丁烧录）；
+   ② `insmod /data/mcs_uart.ko` 后 dmesg 三步（dev/bind/release）全 OK；
+   ③ 从核驱动未复位控制器（SRR/CRU SOFTRST，见 6.6 约束）。
+   根因分析见 liteos_m issue 1014 与 `uart/README.md`。
 
 ## 8. 提交规范（给要改代码的同事）
 
@@ -240,5 +282,6 @@ Creating ECHO thread...
 - `$CODE/device/board/hihope/rk3568_amp/API.md` — libmica 应用接口
 - `$CODE/device/soc/rockchip/rk3568/mcs/README.md` — 架构仓结构与 prebuilt 重编方法
 - `$CODE/device/board/hihope/rk3568_amp/example/README.md` — 主从核通信应用开发指南（rpmsg_demo）
+- `$CODE/device/board/hihope/rk3568_amp/uart/README.md` — UART3 让渡模块（先探活-后逐出：构建/部署/验证/换口）
 - `kernel/liteos_m/compat/mcs/README.md`（evolve 分支）— 从核组件与裁剪记录
 - 从核 SDK 包内 `README.md` — SDK 使用说明
