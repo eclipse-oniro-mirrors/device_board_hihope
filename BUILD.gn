@@ -28,5 +28,8 @@ if (ohos_kernel_type == "liteos_m") {
     if (device_name == "rk3568_m") {
       modules += [ "rk3568_m" ]
     }
+    if (device_name == "rk3588_m") {
+      modules += [ "rk3588_m" ]
+    }
   }
 }

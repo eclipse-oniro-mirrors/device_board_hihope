@@ -1,0 +1,10 @@
+{
+  "parts": {
+    "device_rk3588_m": {
+      "module_list": [
+        "//device/board/hihope/rk3588_m:rk3588_m"
+      ]
+    }
+  },
+  "subsystem": "device_rk3588_m"
+}
