@@ -55,6 +55,7 @@
 
 #include <openamp/rpmsg.h>
 #include <mica/mica.h>
+#include <user_msg/user_msg.h>
 
 #include "rpc_proto.h"
 
@@ -65,9 +66,11 @@
 #define RESP_WAIT_SEC		10
 #define RPC_EPT_NAME		"rpmsg-rpc"
 #define TTY_EPT_NAME		"rpmsg-tty"
+#define UMT_EPT_NAME		"rpmsg-umt"
 
 static struct rpmsg_endpoint rpc_ept;
 static struct rpmsg_endpoint g_tty_ept;
+static struct rpmsg_endpoint g_umt_ept;
 static sem_t ept_ready;
 static sem_t resp_ready;
 static sem_t tty_ready;
@@ -166,7 +169,19 @@ static bool rpc_match(struct rpmsg_device *rdev, const char *name,
 	if (!name)
 		return false;
 	return strncmp(name, RPC_EPT_NAME, RPMSG_NAME_SIZE) == 0 ||
-	       strncmp(name, TTY_EPT_NAME, RPMSG_NAME_SIZE) == 0;
+	       strncmp(name, TTY_EPT_NAME, RPMSG_NAME_SIZE) == 0 ||
+	       strncmp(name, UMT_EPT_NAME, RPMSG_NAME_SIZE) == 0;
+}
+
+/* umt rx: the slave umt service may push notifications; this demo does not
+ * consume them - the endpoint exists so the slave umt ept gets bound (its
+ * is_rpmsg_ept_ready()/dest_addr updates) and mica_create_all_services on
+ * the slave can complete. */
+static int umt_rx_cb(struct rpmsg_endpoint *ept, void *data,
+		     size_t len, uint32_t src, void *priv)
+{
+	(void)ept; (void)data; (void)len; (void)src; (void)priv;
+	return 0;
 }
 
 /* tty rx: slave shell output + the app task's periodic tick-alive lines */
@@ -213,6 +228,64 @@ static void rpc_bind(struct rpmsg_device *rdev, const char *name,
 		}
 		tty_ok = 1;
 		sem_post(&tty_ready);
+		return;
+	}
+
+	if (strncmp(name, UMT_EPT_NAME, RPMSG_NAME_SIZE) == 0) {
+		printf("[np] NS bind: %s peer_addr=%u\n",
+		       UMT_EPT_NAME, remote_addr);
+		ret = rpmsg_create_ept(&g_umt_ept, rdev, UMT_EPT_NAME,
+				       remote_dest, remote_addr,
+				       umt_rx_cb, NULL);
+		if (ret) {
+			fprintf(stderr, "[np] umt rpmsg_create_ept failed: %d\n",
+				ret);
+			return;
+		}
+		/*
+		 * First umt frame initializes the slave's UMT send buffer:
+		 * the slave parses it as umt_data_t{phy_addr, data_len} and
+		 * computes send_buffer_addr = phy_addr + 1MB. phy_addr must
+		 * be the copy_mem base obtained from mcs_km (2MB at the tail
+		 * of the 16MB openamp shm: master writes the low MB, the
+		 * slave writes the high MB). data_len = 0 keeps the receive
+		 * path harmless. Mirrors micad's init via libmica
+		 * init_core_shared_memory().
+		 */
+		{
+			static struct core_msg_mem_info umtMem;
+			static int umtMemTried;
+			struct { unsigned long phyAddr; unsigned int dataLen; } umtInit;
+
+			if (!umtMemTried) {
+				umtMemTried = 1;
+				umtMem.instance_id = 0;
+				if (init_core_shared_memory(&umtMem,
+							    MCS_KM_PED_BAREMETAL) == 0)
+					printf("[np] umt copy_mem 0x%lx size 0x%zx\n",
+					       umtMem.phy_addr, umtMem.size);
+				else
+					fprintf(stderr, "[np] umt copy_mem init failed\n");
+				/* Fallback: on this board mcs_km copy_mem only maps
+				 * baremetal_mem[0] (the 1MB vring window), so
+				 * GET_COPY_MSG_MEM fails. The whole 0x74000000..
+				 * 0x77FFFFFF window is reserved from Linux
+				 * (mcs_baremetal_mem in /proc/iomem) and the slave
+				 * image + 4MB heap end near 0x74550000, so a static
+				 * in-window address well past the heap is safe for
+				 * the demo (master never reads the UMT region). */
+				if (umtMem.phy_addr == 0)
+					umtMem.phy_addr = 0x75000000UL;
+			}
+			if (umtMem.phy_addr != 0) {
+				umtInit.phyAddr = umtMem.phy_addr;
+				umtInit.dataLen = 0;
+				if (rpmsg_send(&g_umt_ept, &umtInit,
+					       sizeof(umtInit)) == 0)
+					printf("[np] umt init sent (slave send buf 0x%lx)\n",
+					       umtMem.phy_addr + 0x100000UL);
+			}
+		}
 		return;
 	}
 
@@ -338,6 +411,16 @@ static void handle_req(struct reqq_slot *slot)
 	case RPC_FUNC_PING: { /* slave-side rpctest: echo back */
 		resp_len = (plen < sizeof(resp)) ? plen : sizeof(resp);
 		memcpy(resp, payload, resp_len);
+		break;
+	}
+	case RPC_FUNC_GET_TICK: { /* slave-side: 64-bit master tick */
+		struct timespec ts;
+		uint64_t t;
+
+		(void)clock_gettime(CLOCK_MONOTONIC, &ts);
+		t = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
+		memcpy(resp, &t, sizeof(t));
+		resp_len = sizeof(t);
 		break;
 	}
 	case RPC_FUNC_LOG: { /* slave-side diagnostics: print the line */
