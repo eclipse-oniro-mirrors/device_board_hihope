@@ -52,6 +52,7 @@
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <termios.h>
+#include <dirent.h>
 
 #include <openamp/rpmsg.h>
 #include <mica/mica.h>
@@ -64,9 +65,12 @@
 #define DEFAULT_PINGS		3
 #define EPT_WAIT_SEC		30
 #define RESP_WAIT_SEC		10
+static int g_stop_mode;
+
 #define RPC_EPT_NAME		"rpmsg-rpc"
 #define TTY_EPT_NAME		"rpmsg-tty"
 #define UMT_EPT_NAME		"rpmsg-umt"
+#define UMT_COPY_NODE_PREFIX	"oh_rt-mcs-copy"
 
 static struct rpmsg_endpoint rpc_ept;
 static struct rpmsg_endpoint g_tty_ept;
@@ -79,6 +83,10 @@ static volatile sig_atomic_t tty_ok;
 static volatile sig_atomic_t stop_req;
 static uint32_t g_peer_addr;
 static uint32_t g_tty_peer_addr;
+static struct rpmsg_endpoint g_umt_ept;
+static uint32_t g_umt_peer_addr;
+static volatile sig_atomic_t g_umt_ok;
+static volatile unsigned g_umt_rx_cnt;
 /* tty bridge: pty master. Everything the slave prints over rpmsg-tty is
  * written here, and bytes typed into the pty slave (/dev/pts/N) are
  * forwarded to the slave shell. Any terminal can "screen /dev/pts/N" to
@@ -132,7 +140,8 @@ static uint32_t g_reqq_dropped;
 
 static void usage(const char *prog)
 {
-	fprintf(stderr, "usage: %s [-f firmware] [-c cpu_str] [-n ping_count]\n",
+	fprintf(stderr, "usage: %s [-f firmware] [-c cpu_str] [-n ping_count] [-s]\n"
+		"  -s: stop mode - ask the running slave to power off (PSCI CPU_OFF)\n",
 		prog);
 }
 
@@ -173,17 +182,6 @@ static bool rpc_match(struct rpmsg_device *rdev, const char *name,
 	       strncmp(name, UMT_EPT_NAME, RPMSG_NAME_SIZE) == 0;
 }
 
-/* umt rx: the slave umt service may push notifications; this demo does not
- * consume them - the endpoint exists so the slave umt ept gets bound (its
- * is_rpmsg_ept_ready()/dest_addr updates) and mica_create_all_services on
- * the slave can complete. */
-static int umt_rx_cb(struct rpmsg_endpoint *ept, void *data,
-		     size_t len, uint32_t src, void *priv)
-{
-	(void)ept; (void)data; (void)len; (void)src; (void)priv;
-	return 0;
-}
-
 /* tty rx: slave shell output + the app task's periodic tick-alive lines */
 static int tty_rx_cb(struct rpmsg_endpoint *ept, void *data,
 		     size_t len, uint32_t src, void *priv)
@@ -203,6 +201,65 @@ static int tty_rx_cb(struct rpmsg_endpoint *ept, void *data,
 		if (n > 0)
 			(void)write(g_ptym, line, n);
 	}
+	return 0;
+}
+
+/* ---------- UMT (rpmsg-umt) master-side serve ----------
+ * The slave mica UMT service exposes an "rpmsg-umt" endpoint; its send
+ * buffer is initialized from the phy_addr carried by the FIRST umt
+ * message it receives (slave send_buffer = phy + 1MB). The master
+ * announces itself by sending one umt_data{phy_addr = copy-region base}
+ * right after the bind; the base is parsed from the same dts node
+ * ("oh_rt-mcs-copy@...") the mcs_km kernel module pins. */
+struct umt_data_msg {
+	uint64_t phy_addr;
+	uint32_t data_len;
+};
+
+static int umt_read_copy_base(uint64_t *base)
+{
+	const char *dir = "/sys/firmware/devicetree/base/reserved-memory";
+	char path[512];
+	uint8_t reg[16];
+	DIR *d = opendir(dir);
+	struct dirent *e;
+	int fd, n;
+
+	if (!d)
+		return -1;
+	while ((e = readdir(d)) != NULL) {
+		if (strncmp(e->d_name, UMT_COPY_NODE_PREFIX,
+			    strlen(UMT_COPY_NODE_PREFIX)) != 0)
+			continue;
+		snprintf(path, sizeof(path), "%s/%s/reg", dir, e->d_name);
+		fd = open(path, O_RDONLY);
+		if (fd < 0)
+			continue;
+		n = read(fd, reg, sizeof(reg));
+		close(fd);
+		if (n < 8)
+			continue;
+		*base = ((uint64_t)reg[0] << 56) | ((uint64_t)reg[1] << 48) |
+			((uint64_t)reg[2] << 40) | ((uint64_t)reg[3] << 32) |
+			((uint64_t)reg[4] << 24) | ((uint64_t)reg[5] << 16) |
+			((uint64_t)reg[6] << 8) | (uint64_t)reg[7];
+		closedir(d);
+		return 0;
+	}
+	closedir(d);
+	return -1;
+}
+
+static int umt_rx_cb(struct rpmsg_endpoint *ept, void *data,
+		     size_t len, uint32_t src, void *priv)
+{
+	struct umt_data_msg *m = data;
+
+	(void)ept; (void)src; (void)priv;
+	g_umt_rx_cnt++;
+	if (len >= sizeof(*m))
+		printf("[umt] rx #%u: phy=0x%llx len=%u\n", g_umt_rx_cnt,
+		       (unsigned long long)m->phy_addr, m->data_len);
 	return 0;
 }
 
@@ -232,60 +289,33 @@ static void rpc_bind(struct rpmsg_device *rdev, const char *name,
 	}
 
 	if (strncmp(name, UMT_EPT_NAME, RPMSG_NAME_SIZE) == 0) {
+		struct umt_data_msg init = {0};
+		uint64_t base = 0;
+
+		g_umt_peer_addr = (remote_addr != RPMSG_ADDR_ANY) ?
+			remote_addr : remote_dest;
 		printf("[np] NS bind: %s peer_addr=%u\n",
-		       UMT_EPT_NAME, remote_addr);
+		       UMT_EPT_NAME, g_umt_peer_addr);
 		ret = rpmsg_create_ept(&g_umt_ept, rdev, UMT_EPT_NAME,
 				       remote_dest, remote_addr,
 				       umt_rx_cb, NULL);
 		if (ret) {
-			fprintf(stderr, "[np] umt rpmsg_create_ept failed: %d\n",
-				ret);
+			fprintf(stderr, "[np] umt rpmsg_create_ept failed: %d\n", ret);
 			return;
 		}
-		/*
-		 * First umt frame initializes the slave's UMT send buffer:
-		 * the slave parses it as umt_data_t{phy_addr, data_len} and
-		 * computes send_buffer_addr = phy_addr + 1MB. phy_addr must
-		 * be the copy_mem base obtained from mcs_km (2MB at the tail
-		 * of the 16MB openamp shm: master writes the low MB, the
-		 * slave writes the high MB). data_len = 0 keeps the receive
-		 * path harmless. Mirrors micad's init via libmica
-		 * init_core_shared_memory().
-		 */
-		{
-			static struct core_msg_mem_info umtMem;
-			static int umtMemTried;
-			struct { unsigned long phyAddr; unsigned int dataLen; } umtInit;
-
-			if (!umtMemTried) {
-				umtMemTried = 1;
-				umtMem.instance_id = 0;
-				if (init_core_shared_memory(&umtMem,
-							    MCS_KM_PED_BAREMETAL) == 0)
-					printf("[np] umt copy_mem 0x%lx size 0x%zx\n",
-					       umtMem.phy_addr, umtMem.size);
-				else
-					fprintf(stderr, "[np] umt copy_mem init failed\n");
-				/* Fallback: on this board mcs_km copy_mem only maps
-				 * baremetal_mem[0] (the 1MB vring window), so
-				 * GET_COPY_MSG_MEM fails. The whole 0x74000000..
-				 * 0x77FFFFFF window is reserved from Linux
-				 * (mcs_baremetal_mem in /proc/iomem) and the slave
-				 * image + 4MB heap end near 0x74550000, so a static
-				 * in-window address well past the heap is safe for
-				 * the demo (master never reads the UMT region). */
-				if (umtMem.phy_addr == 0)
-					umtMem.phy_addr = 0x75000000UL;
-			}
-			if (umtMem.phy_addr != 0) {
-				umtInit.phyAddr = umtMem.phy_addr;
-				umtInit.dataLen = 0;
-				if (rpmsg_send(&g_umt_ept, &umtInit,
-					       sizeof(umtInit)) == 0)
-					printf("[np] umt init sent (slave send buf 0x%lx)\n",
-					       umtMem.phy_addr + 0x100000UL);
-			}
+		if (umt_read_copy_base(&base) != 0 || base == 0) {
+			fprintf(stderr, "[np] umt: copy region not found in dts\n");
+			return;
 		}
+		init.phy_addr = base;
+		ret = rpmsg_send(&g_umt_ept, &init, sizeof(init));
+		if (ret < 0) {
+			fprintf(stderr, "[np] umt init send failed: %d\n", ret);
+			return;
+		}
+		g_umt_ok = 1;
+		printf("[np] umt served, copy base 0x%llx\n",
+		       (unsigned long long)base);
 		return;
 	}
 
@@ -413,14 +443,11 @@ static void handle_req(struct reqq_slot *slot)
 		memcpy(resp, payload, resp_len);
 		break;
 	}
-	case RPC_FUNC_GET_TICK: { /* slave-side: 64-bit master tick */
-		struct timespec ts;
-		uint64_t t;
+	case RPC_FUNC_GET_TICK: { /* slave mica_rpc test: 8-byte tick */
+		uint64_t tick = (uint64_t)time(NULL);
 
-		(void)clock_gettime(CLOCK_MONOTONIC, &ts);
-		t = (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
-		memcpy(resp, &t, sizeof(t));
-		resp_len = sizeof(t);
+		memcpy(resp, &tick, sizeof(tick));
+		resp_len = sizeof(tick);
 		break;
 	}
 	case RPC_FUNC_LOG: { /* slave-side diagnostics: print the line */
@@ -1022,8 +1049,9 @@ int main(int argc, char **argv)
 	pthread_t worker;
 	int opt, ret, i;
 
-	while ((opt = getopt(argc, argv, "f:c:n:h")) != -1) {
+	while ((opt = getopt(argc, argv, "sf:c:n:h")) != -1) {
 		switch (opt) {
+		case 's': g_stop_mode = 1; break;
 		case 'f': firmware = optarg; break;
 		case 'c': cpu_str = optarg; break;
 		case 'n': pings = atoi(optarg); break;
@@ -1062,6 +1090,17 @@ int main(int argc, char **argv)
 		goto out_free;
 	}
 	printf("[np] step1 mica_create ok\n");
+
+	if (g_stop_mode) {
+		ret = mica_stop(client);
+		if (ret) {
+			fprintf(stderr, "[np] mica_stop failed: %d\n", ret);
+			goto out_remove;
+		}
+		printf("[np] slave powered off (PSCI CPU_OFF)\n");
+		ret = mica_remove(client);
+		goto out_free;
+	}
 
 	ret = mica_start(client);
 	if (ret) {

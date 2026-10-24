@@ -13,10 +13,10 @@ index 8386069..984d874 100644
  	fiq-debugger {
 diff --git a/arch/arm64/boot/dts/rockchip/rk3568-ohrt-mcs.dtsi b/arch/arm64/boot/dts/rockchip/rk3568-ohrt-mcs.dtsi
 new file mode 100644
-index 0000000..c274418
+index 0000000..1875ca0
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rk3568-ohrt-mcs.dtsi
-@@ -0,0 +1,225 @@
+@@ -0,0 +1,242 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (c) 2026 Huawei Device Co., Ltd.
@@ -26,7 +26,7 @@ index 0000000..c274418
 + * R1.3 已按真机核验（rk3568 /proc/iomem + DTB memory@0 reg 解码，证据与推导见
 + * ../phase1/PROGRESS.md「板端实测」一节）：
 + *   - System RAM = 0x00200000-0x083fffff + 0x09400000-0x7fffffff；
-+ *     openEuler/OEE 默认基址 0x08000000 落在活内存里，本板作废。
++ *     社区参考实现默认基址 0x08000000 落在活内存里，本板作废。
 + *   - 0x08400000-0x093fffff（16MB）未声明为 RAM 且 dts 源码无出处 → ATF/U-Boot
 + *     期挖除（RK3568 OP-TEE 标准位置），不可用。
 + *   - 0x7ac00000-0x7bbfffff、0x7be00000-0x7ddfffff 为 U-Boot/ATF memblock 保留
@@ -36,7 +36,13 @@ index 0000000..c274418
 + *
 + * memory-region 顺序约定（mcs_km init_ped_rsv_mem）：第一项 = 通信共享内存
 + * （openamp vring/buffer，shared-dma-pool），第二项 = 实例/Client OS 保留内存
-+ * （mcs_km INSTANCE_SIZE 0x2400000 = 36MB，此处 63MB 富余）。
++ * （从核私有：ELF 链接基址 0x74100000 + heap + 板级静态窗口 net DMA
++ * 0x77A00000/scratch 0x77C00000，61MB 连续；当前单实例，不做多实例切分）。
++ * UMT copy-msg 区独立划出（oh_rt,copy-mem-region，0x77E00000 2MB）：
++ * 修复 20261023_153000——旧布局假设 region[0] 为 ≥16MB 大 openamp 区
++ * （copy = base+13M），与 1MB vring 两段式不匹配导致 IOC_GET_COPY_MSG_MEM
++ * 必然 -EINVAL；独立后 mcs_km 按每实例 2M 分配，未配置时回退旧布局
++ * （兼容 dayu210 单大区配套）。
 + *
 + * 合入方式：追加进 kernel/linux/patches/linux-6.6/rk3568_patch/kernel.patch，
 + * 与 legacy 工程 maxcpus=3 同一注入点（chosen 追加 bootargs，见
@@ -58,9 +64,18 @@ index 0000000..c274418
 +			no-map;
 +		};
 +
-+		/* 实例/Client OS 保留内存，63MB */
++		/* 实例/Client OS 保留内存，61MB 连续（从核 ELF + heap；尾部含
++		 * 从核板级静态窗口 net DMA 0x77A00000 + 2M、scratch 0x77C00000
++		 * + 2M，从核 heap 不得越过 0x77A00000——board.ld 有 ASSERT） */
 +		oh_rt_mcs_mem: oh_rt-mcs-mem@74100000 {
-+			reg = <0x00 0x74100000 0x00 0x3F00000>;
++			reg = <0x00 0x74100000 0x00 0x3D00000>;
++			no-map;
++		};
++
++		/* UMT copy-msg 共享区，2MB（每实例 1M 发送 + 1M 接收），
++		 * 位于 64MB 保留窗口末尾，不与从核内存交错 */
++		oh_rt_mcs_copy: oh_rt-mcs-copy@77e00000 {
++			reg = <0x00 0x77e00000 0x00 0x200000>;
 +			no-map;
 +		};
 +	};
@@ -70,6 +85,8 @@ index 0000000..c274418
 +		compatible = "oh_rt,mcs_remoteproc";
 +		memory-region = <&oh_rt_mcs_dma>,
 +		                <&oh_rt_mcs_mem>;
++		/* UMT copy-msg 独立区（mcs_km IOC_GET_COPY_MSG_MEM 数据源） */
++		oh_rt,copy-mem-region = <&oh_rt_mcs_copy>;
 +	};
 +
 +	/* R2 骨架：LiteOS-M 客户端通路。mcs_km init_riscv_irq 需要本节点提供
