@@ -31,7 +31,8 @@
 | 区域 | 范围 | 大小 | 用途 |
 |---|---|---|---|
 | 通信共享内存 | `0x74000000-0x740fffff` | 1MB | openamp vring + rpmsg buffer 池（shared-dma-pool） |
-| 从核保留内存 | `0x74100000-0x77ffffff` | 63MB | 从核 ELF 加载（链接基址 0x74100000）+ 从核堆 |
+| 从核保留内存 | `0x74100000-0x77dfffff` | 61MB | 从核 ELF 加载（链接基址 0x74100000）+ 从核堆（尾部含 net DMA 0x77A00000 与 scratch 0x77C00000 静态窗口） |
+| UMT copy 区 | `0x77e00000-0x77ffffff` | 2MB | UMT 消息拷贝共享区（`oh_rt,copy-mem-region`，mcs_km IOC_GET_COPY_MSG_MEM 数据源） |
 
 **两侧软件栈各三层**：
 
@@ -72,7 +73,7 @@ API 速查。
 | 改动 | 文件 | 作用 |
 |---|---|---|
 | bootargs 追加 `maxcpus=3` | `rk3568-linux.dtsi` 的 chosen 节点 | Linux 启动只 bring-up CPU0-2，**CPU3 从未进入 Linux 调度**，留给从核 |
-| 新增 `rk3568-ohrt-mcs.dtsi` | 新文件 | `reserved-memory` 两个节点（1MB 通信 + 63MB 从核，均 `no-map`）+ `oh_rt,mcs_remoteproc` 节点（memory-region 引用上述两块）+ **网卡让渡**（`&gmac1` 置 disabled 摘出 Linux + `mcs-net-gmac1` 节点供 mcs_net.ko 匹配，见第 7 节）+ **CAN 让渡**（`mcs-can1` 节点默认启用 + `mcs-can2` 节点默认 disabled，供 mcs_can.ko 匹配——单模块多口，CAN2 为接口预留扩展（尚未上板验证），需要时板级 dts 改 okay，见第 7 节与 `mcs_can/USER_GUIDE.md`） |
+| 新增 `rk3568-ohrt-mcs.dtsi` | 新文件 | `reserved-memory` 三个节点（1MB 通信 + 61MB 从核 + 2MB UMT copy，均 `no-map`）+ `oh_rt,mcs_remoteproc` 节点（memory-region 引用上述两块）+ **网卡让渡**（`&gmac1` 置 disabled 摘出 Linux + `mcs-net-gmac1` 节点供 mcs_net.ko 匹配，见第 7 节）+ **CAN 让渡**（`mcs-can1` 节点默认启用 + `mcs-can2` 节点默认 disabled，供 mcs_can.ko 匹配——单模块多口，CAN2 为接口预留扩展（尚未上板验证），需要时板级 dts 改 okay，见第 7 节与 `mcs_can/USER_GUIDE.md`） |
 | include 该 dtsi | `rk3568-toybrick-x0-linux.dts` | 接入板级 dts |
 
 `rk3568-ohrt-mcs.dtsi` 核心 content（完整版见 `dts/rk3568-ohrt-mcs.dtsi`）：
@@ -89,8 +90,12 @@ API 速查。
 			reg = <0x00 0x74000000 0x00 0x100000>;
 			no-map;
 		};
-		oh_rt_mcs_mem: oh_rt-mcs-mem@74100000 {     /* 从核保留内存 */
-			reg = <0x00 0x74100000 0x00 0x3F00000>;
+		oh_rt_mcs_mem: oh_rt-mcs-mem@74100000 {     /* 从核保留内存（61MB） */
+			reg = <0x00 0x74100000 0x00 0x3D00000>;
+			no-map;
+		};
+		oh_rt_mcs_copy: oh_rt-mcs-copy@77e00000 {   /* UMT copy 区（2MB） */
+			reg = <0x00 0x77e00000 0x00 0x200000>;
 			no-map;
 		};
 	};

@@ -56,7 +56,7 @@
 | 项 | 说明 |
 |---|---|
 | 内核 `mcs_km.ko` 已 insmod | 提供 `/dev/mcs`、vring 与共享内存管理、PSCI 启核 |
-| 镜像 dts 含 `oh_rt,mcs_remoteproc` 节点 | 共享内存 0x74000000/1MB + 从核保留内存 0x74100000/63MB |
+| 镜像 dts 含 `oh_rt,mcs_remoteproc` 节点 | 共享内存 0x74000000/1MB + 从核保留内存 0x74100000/61MB |
 | cmdline `maxcpus=3` | CPU3 不被 Linux 调度 |
 | 从核固件（liteos-rk3568.elf）已放到板上 | 内含 mcs 从核库与业务服务 |
 
