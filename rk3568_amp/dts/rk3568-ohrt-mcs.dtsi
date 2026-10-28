@@ -224,19 +224,27 @@
 /* ============================================================
  * UART3 让渡：交给从核（CPU3 LiteOS-M rk3568_m）作实时串口。
  * 20pin（J9903）引出 uart3m1 组（TX=GPIO3_B7 / RX=GPIO3_C0，
- * func4）。从核驱动自带全套 bring-up（CRU 时钟门控 + xin24m
- * 父时钟 + GRF pinmux + GIC INTID 151 认领/路由），无 PHY/时钟
- * 移交等主核侧服务（区别于 GMAC1/CAN1），无需 mcs-uart helper
- * 节点，主核只需让出：
- *   - Linux 不创建 serial 设备（dw-apb-uart 不绑定）
- *   - pinctrl/时钟/irq 151 均不申请（焊盘停 boot 链默认态，
- *     由从核 uart_init 自配 GRF）
- *   - ttyS 序列整体前移一位（BT=uart8 编号变化，烧板后回归）
+ * func4）。
+ *
+ * 让渡方式与 GMAC1/CAN1 相反——“先探活、后逐出”：GPIO3_C0
+ * （RX）的输入通路依赖 Linux 驱动模型 probe 框架在 8250_dw
+ * 绑定 fe670000.serial 时完成的焊盘初始化，从核裸写 GRF
+ * （IOMUX+PULL 同值）无法复现（实测 status="disabled" +
+ * 从核自配时 TX 回环正常而 RX 无输入，liteos_m issue 1014
+ * 根因），其后任何 SRR / CRU 软复位亦会撤销该初始化。故：
+ *   - 本节点保持 okay：boot 时 8250_dw 正常绑定，pinctrl
+ *     框架完成 uart3m1 焊盘探活
+ *   - 主核 mcs_uart.ko（../uart/）等待绑定完成后释放驱动
+ *     （等效 sysfs unbind），焊盘保持已初始化态
+ *   - 从核 uart 驱动（evolve 分支 targets/rk3568_m board/
+ *     uart.c）自带全套 bring-up（CRU 时钟门控 + xin24m 父
+ *     时钟 + GRF pinmux + GIC INTID 151），且严禁 SRR /
+ *     CRU SOFTRST 复位（复位会撤销探活态）
  * 从核对应配置：uart_board_cfg.h BOARD_UART3_PINMUX =
  * RK3568_UART3_PINMUX_M1（产品约定：rk3568_m 默认串口）。
- * 实测（DAYU200，2026-10-13）：uart_test 3 self + 片外跳线回环
- * 双 PASS（256/256，isr=480 基线）。
+ * 实测（DAYU200，2026-10-21/22）：uart_test 3 self + 片外
+ * 跳线回环双 PASS（256/256，isr=480 基线；115200/1200）。
  * ============================================================ */
 &uart3 {
-	status = "disabled";
+	status = "okay";
 };
