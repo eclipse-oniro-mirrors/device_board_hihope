@@ -49,6 +49,9 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/select.h>
+#include <sys/syscall.h>
 #include <netinet/in.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -128,6 +131,9 @@ static struct {
  * retry window (~14s). Non-blocking connect + poll keeps the worst case
  * bounded so slow targets cannot starve other proxy users. */
 #define NP_CONNECT_TIMEOUT_MS 10000
+/* accept() cap: same rationale as connect - a blocking accept on a quiet
+ * listener would stall the single worker thread forever; poll-bounded. */
+#define NP_ACCEPT_TIMEOUT_MS 10000
 struct reqq_slot {
 	uint32_t len;
 	uint8_t msg[RPC_MAX_PAYLOAD + sizeof(struct rpc_hdr)];
@@ -390,9 +396,25 @@ static int rpc_rx_cb(struct rpmsg_endpoint *ept, void *data,
 	return 0;
 }
 
+/* ---------- helpers: pull a NUL-terminated path out of a payload ---------- */
+static const char *path_from_payload(const uint8_t *p, uint32_t plen,
+				     char *buf, uint32_t bufsz)
+{
+	uint32_t i;
+
+	if (plen == 0 || plen >= bufsz)
+		return NULL;
+	for (i = 0; i < plen; i++) {
+		if (p[i] == '\0') {
+			memcpy(buf, p, i + 1);
+			return buf;
+		}
+	}
+	return NULL;
+}
+
 /* ---------- helpers: send responses (fragmented) ---------- */
-static int send_resp_frag(uint32_t func_id, uint32_t req_id,
-			  int32_t ret, int32_t err,
+static int send_resp_frag(uint32_t func_id, uint32_t req_id,			  int32_t ret, int32_t err,
 			  const uint8_t *payload, uint32_t total)
 {
 	uint8_t msg[RPC_MAX_PAYLOAD + sizeof(struct rpc_hdr)];
@@ -643,6 +665,435 @@ static void handle_req(struct reqq_slot *slot)
 			printf("[np] close fd=%d\n", a->fd);
 		break;
 	}
+	case RPC_FUNC_BIND: {
+		struct rpc_sockaddr_args *a = (struct rpc_sockaddr_args *)payload;
+
+		if (plen < sizeof(*a) || plen < sizeof(*a) + a->addrlen) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = bind(a->fd,
+			   (const struct sockaddr *)(payload + sizeof(*a)),
+			   a->addrlen);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_LISTEN: {
+		struct rpc_listen_args *a = (struct rpc_listen_args *)payload;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = listen(a->fd, a->backlog);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_ACCEPT: {
+		struct rpc_accept_args *a = (struct rpc_accept_args *)payload;
+		struct sockaddr_storage ss;
+		socklen_t slen = sizeof(ss);
+		struct rpc_accept_resp *r = (struct rpc_accept_resp *)resp;
+		struct pollfd pfd;
+		int fl, nfd, pret;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		/* non-blocking accept bounded by poll (a quiet listener must
+		 * not stall the single worker thread) */
+		fl = fcntl(a->fd, F_GETFL, 0);
+		if (fl >= 0)
+			(void)fcntl(a->fd, F_SETFL, fl | O_NONBLOCK);
+		pfd.fd = a->fd;
+		pfd.events = POLLIN;
+		pret = poll(&pfd, 1, NP_ACCEPT_TIMEOUT_MS);
+		if (pret == 0) {
+			ret = -1; err = -EAGAIN;
+		} else if (pret < 0) {
+			ret = -1; err = -errno;
+		} else {
+			nfd = accept(a->fd, (struct sockaddr *)&ss, &slen);
+			if (nfd < 0) {
+				ret = -1; err = -errno;
+			} else {
+				uint32_t alen = (slen > 128) ? 128 : slen;
+
+				r->fd = nfd;
+				r->addrlen = alen;
+				memcpy(resp + sizeof(*r), &ss, alen);
+				resp_len = sizeof(*r) + alen;
+				ret = 0;
+				printf("[np] accept fd=%d -> %d\n", a->fd, nfd);
+			}
+		}
+		if (fl >= 0)
+			(void)fcntl(a->fd, F_SETFL, fl);
+		break;
+	}
+	case RPC_FUNC_SETSOCKOPT: {
+		struct rpc_setsockopt_args *a = (struct rpc_setsockopt_args *)payload;
+
+		if (plen < sizeof(*a) || plen < sizeof(*a) + a->optlen) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = setsockopt(a->fd, a->level, a->optname,
+				 payload + sizeof(*a), a->optlen);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_GETSOCKOPT: {
+		struct rpc_getsockopt_args *a = (struct rpc_getsockopt_args *)payload;
+		socklen_t ol;
+		uint32_t cap;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		cap = a->optlen;
+		if (cap > sizeof(resp) - 4)
+			cap = sizeof(resp) - 4;
+		ol = cap;
+		ret = getsockopt(a->fd, a->level, a->optname, resp + 4, &ol);
+		if (ret < 0) {
+			err = -errno;
+		} else {
+			*(uint32_t *)resp = (uint32_t)ol;
+			resp_len = 4 + (uint32_t)ol;
+		}
+		break;
+	}
+	case RPC_FUNC_GETSOCKNAME:
+	case RPC_FUNC_GETPEERNAME: {
+		struct rpc_getname_args *a = (struct rpc_getname_args *)payload;
+		struct sockaddr_storage ss;
+		socklen_t slen = sizeof(ss);
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		if (hdr->func_id == RPC_FUNC_GETSOCKNAME)
+			ret = getsockname(a->fd, (struct sockaddr *)&ss, &slen);
+		else
+			ret = getpeername(a->fd, (struct sockaddr *)&ss, &slen);
+		if (ret < 0) {
+			err = -errno;
+		} else {
+			uint32_t alen = (slen > 128) ? 128 : slen;
+
+			*(uint32_t *)resp = alen;
+			memcpy(resp + 4, &ss, alen);
+			resp_len = 4 + alen;
+		}
+		break;
+	}
+	case RPC_FUNC_SHUTDOWN: {
+		struct rpc_shutdown_args *a = (struct rpc_shutdown_args *)payload;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = shutdown(a->fd, a->how);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_SELECT: {
+		struct rpc_select_args *a = (struct rpc_select_args *)payload;
+		fd_set r, w, e;
+		struct timeval tv, *tvp;
+
+		if (plen < sizeof(*a) || a->nfds < 0 ||
+		    a->nfds > FD_SETSIZE) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		/* the wire always carries three full bitmaps; an all-zero
+		 * bitmap is equivalent to a NULL set */
+		memset(&r, 0, sizeof(r));
+		memset(&w, 0, sizeof(w));
+		memset(&e, 0, sizeof(e));
+		memcpy(&r, a->rdset, RPC_SELECT_SET_BYTES);
+		memcpy(&w, a->wrset, RPC_SELECT_SET_BYTES);
+		memcpy(&e, a->exset, RPC_SELECT_SET_BYTES);
+		if (a->timeout_ms < 0) {
+			tvp = NULL;
+		} else {
+			tv.tv_sec = a->timeout_ms / 1000;
+			tv.tv_usec = (a->timeout_ms % 1000) * 1000;
+			tvp = &tv;
+		}
+		ret = select(a->nfds, &r, &w, &e, tvp);
+		if (ret < 0) {
+			err = -errno;
+		} else {
+			memcpy(resp, &r, RPC_SELECT_SET_BYTES);
+			memcpy(resp + RPC_SELECT_SET_BYTES, &w,
+			       RPC_SELECT_SET_BYTES);
+			memcpy(resp + 2 * RPC_SELECT_SET_BYTES, &e,
+			       RPC_SELECT_SET_BYTES);
+			resp_len = 3 * RPC_SELECT_SET_BYTES;
+		}
+		break;
+	}
+	case RPC_FUNC_SYSTEM: {
+		char cmd[RPC_MAX_PAYLOAD + 1];
+		const char *s = path_from_payload(payload, plen, cmd, sizeof(cmd));
+
+		if (s == NULL) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		printf("[np] system: %s\n", s);
+		fflush(stdout);
+		ret = system(s);
+		break;
+	}
+	case RPC_FUNC_PF_OPEN: {
+		struct rpc_pf_open_args *a = (struct rpc_pf_open_args *)payload;
+		char path[RPC_MAX_PAYLOAD + 1];
+
+		if (plen < sizeof(*a) ||
+		    path_from_payload(payload + sizeof(*a), plen - sizeof(*a),
+				      path, sizeof(path)) == NULL) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = open(path, a->flags, a->mode);
+		if (ret < 0)
+			err = -errno;
+		else
+			printf("[np] pfs open %s -> fd=%d\n", path, ret);
+		break;
+	}
+	case RPC_FUNC_PF_CLOSE: {
+		struct rpc_pf_close_args *a = (struct rpc_pf_close_args *)payload;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = close(a->fd);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_READ: {
+		struct rpc_pf_read_args *a = (struct rpc_pf_read_args *)payload;
+		uint32_t want;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		want = a->count;
+		if (want > sizeof(resp))
+			want = sizeof(resp);
+		ret = (int32_t)read(a->fd, resp, want);
+		if (ret < 0) {
+			err = -errno;
+		} else {
+			resp_len = (uint32_t)ret;
+		}
+		break;
+	}
+	case RPC_FUNC_PF_WRITE: {
+		struct rpc_pf_write_args *a = (struct rpc_pf_write_args *)payload;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = (int32_t)write(a->fd, payload + sizeof(*a),
+				     plen - sizeof(*a));
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_LSEEK: {
+		struct rpc_pf_lseek_args *a = (struct rpc_pf_lseek_args *)payload;
+		off_t pos;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		pos = lseek(a->fd, (off_t)a->offset, a->whence);
+		if (pos < 0) {
+			ret = -1; err = -errno;
+		} else {
+			memcpy(resp, &pos, sizeof(pos));
+			resp_len = sizeof(pos);
+		}
+		break;
+	}
+	case RPC_FUNC_PF_FCNTL: {
+		struct rpc_pf_fcntl_args *a = (struct rpc_pf_fcntl_args *)payload;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		ret = fcntl(a->fd, a->cmd, a->arg);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_UNLINK:
+	case RPC_FUNC_PF_REMOVE:
+	case RPC_FUNC_PF_RMDIR:
+	case RPC_FUNC_PF_CHDIR: {
+		char path[RPC_MAX_PAYLOAD + 1];
+
+		if (path_from_payload(payload, plen, path, sizeof(path)) == NULL) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		switch (hdr->func_id) {
+		case RPC_FUNC_PF_UNLINK:
+			ret = unlink(path);
+			break;
+		case RPC_FUNC_PF_REMOVE:
+			ret = remove(path);
+			break;
+		case RPC_FUNC_PF_RMDIR:
+			ret = rmdir(path);
+			break;
+		default:
+			ret = chdir(path);
+			break;
+		}
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_MKDIR:
+	case RPC_FUNC_PF_ACCESS: {
+		struct rpc_pf_mode_args *a = (struct rpc_pf_mode_args *)payload;
+		char path[RPC_MAX_PAYLOAD + 1];
+
+		if (plen < sizeof(*a) ||
+		    path_from_payload(payload + sizeof(*a), plen - sizeof(*a),
+				      path, sizeof(path)) == NULL) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		if (hdr->func_id == RPC_FUNC_PF_MKDIR)
+			ret = mkdir(path, (mode_t)a->mode);
+		else
+			ret = access(path, (int)a->mode);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_STAT:
+	case RPC_FUNC_PF_FSTAT: {
+		struct rpc_pf_stat_resp *r = (struct rpc_pf_stat_resp *)resp;
+		struct stat st;
+		char path[RPC_MAX_PAYLOAD + 1];
+
+		if (hdr->func_id == RPC_FUNC_PF_STAT) {
+			if (path_from_payload(payload, plen, path,
+					      sizeof(path)) == NULL) {
+				ret = -1; err = -EINVAL;
+				break;
+			}
+			ret = stat(path, &st);
+		} else {
+			struct rpc_pf_fstat_args *a =
+				(struct rpc_pf_fstat_args *)payload;
+
+			if (plen < sizeof(*a)) {
+				ret = -1; err = -EINVAL;
+				break;
+			}
+			ret = fstat(a->fd, &st);
+		}
+		if (ret < 0) {
+			err = -errno;
+		} else {
+			r->st_size = (uint64_t)st.st_size;
+			r->st_mode = (uint32_t)st.st_mode;
+			r->st_blksize = (uint32_t)st.st_blksize;
+			r->pad = 0;
+			resp_len = sizeof(*r);
+		}
+		break;
+	}
+	case RPC_FUNC_PF_RENAME: {
+		char paths[2 * RPC_MAX_PAYLOAD + 2];
+		char *oldp, *newp;
+		uint32_t i, first = 0;
+
+		/* two NUL-terminated paths packed back to back */
+		if (plen == 0 || plen >= sizeof(paths)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		for (i = 0; i < plen; i++) {
+			if (payload[i] == '\0') {
+				first = i;
+				break;
+			}
+		}
+		if (i == plen || first + 1 >= plen ||
+		    memchr(payload + first + 1, '\0', plen - first - 1) == NULL) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		memcpy(paths, payload, plen);
+		oldp = paths;
+		newp = paths + first + 1;
+		ret = rename(oldp, newp);
+		if (ret < 0)
+			err = -errno;
+		break;
+	}
+	case RPC_FUNC_PF_GETCWD: {
+		struct rpc_pf_getcwd_args *a = (struct rpc_pf_getcwd_args *)payload;
+
+		if (plen < sizeof(*a) || a->size == 0 ||
+		    a->size > sizeof(resp)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		if (getcwd((char *)resp, a->size) == NULL) {
+			ret = -1; err = -errno;
+		} else {
+			resp_len = (uint32_t)strlen((char *)resp) + 1;
+		}
+		break;
+	}
+	case RPC_FUNC_PF_GETDENTS: {
+		struct rpc_pf_getdents_args *a =
+			(struct rpc_pf_getdents_args *)payload;
+		uint32_t want;
+		long n;
+
+		if (plen < sizeof(*a)) {
+			ret = -1; err = -EINVAL;
+			break;
+		}
+		want = a->count;
+		if (want > sizeof(resp))
+			want = sizeof(resp);
+		n = syscall(SYS_getdents64, a->fd, resp, want);
+		if (n < 0) {
+			ret = -1; err = -errno;
+		} else {
+			ret = (int32_t)n;
+			resp_len = (uint32_t)n;
+		}
+		break;
+	}
 	default:
 		ret = -1;
 		err = -EOPNOTSUPP;
@@ -778,6 +1229,51 @@ static void *tcp_echo_thread(void *arg)
 		close(cfd);
 	}
 	close(fd);
+	return NULL;
+}
+
+/* ---------- connect-back helper (slave server-phase partner) ----------
+ * The slave's np_* server phase binds 127.0.0.1:CB_PORT on OUR side (its
+ * proxy fds live in this process' fd table) and waits in select+accept.
+ * This thread keeps connecting to that port every 3 s, sends a hello and
+ * echoes the slave's reply, so bind/listen/select/accept round-trip is
+ * exercised fully in-board - no PC-side helper needed. */
+#define CB_PORT		7005
+static void *connectback_thread(void *arg)
+{
+	(void)arg;
+	while (!stop_req) {
+		struct sockaddr_in sin;
+		struct pollfd pfd;
+		char buf[64];
+		int fd;
+
+		fd = socket(AF_INET, SOCK_STREAM, 0);
+		if (fd < 0)
+			goto next;
+		memset(&sin, 0, sizeof(sin));
+		sin.sin_family = AF_INET;
+		sin.sin_port = htons(CB_PORT);
+		sin.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		if (connect(fd, (struct sockaddr *)&sin, sizeof(sin)) < 0)
+			goto next_close;
+		if (send(fd, "master-connect-back", 19, 0) < 0)
+			goto next_close;
+		pfd.fd = fd;
+		pfd.events = POLLIN;
+		if (poll(&pfd, 1, 3000) > 0) {
+			ssize_t n = recv(fd, buf, sizeof(buf) - 1, 0);
+
+			if (n > 0) {
+				buf[n] = '\0';
+				printf("[np] connectback reply: %s\n", buf);
+			}
+		}
+next_close:
+		close(fd);
+next:
+		sleep(3);
+	}
 	return NULL;
 }
 
@@ -1168,6 +1664,12 @@ int main(int argc, char **argv)
 		pthread_create(&techo, NULL, tcp_echo_thread, NULL);
 		pthread_create(&live, NULL, liveness_thread, NULL);
 		pthread_detach(live);
+		{
+			pthread_t cbth;
+
+			pthread_create(&cbth, NULL, connectback_thread, NULL);
+			pthread_detach(cbth);
+		}
 		{
 			pthread_t tbrg, tinj;
 
