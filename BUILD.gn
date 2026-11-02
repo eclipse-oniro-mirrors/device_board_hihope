@@ -22,5 +22,14 @@ if (ohos_kernel_type == "liteos_m") {
     if (device_name == "ws63_m") {
       modules += [ "ws63_m" ]
     }
+    if (device_name == "hi3516") {
+      modules += [ "hi3516" ]
+    }
+    if (device_name == "rk3568_m") {
+      modules += [ "rk3568_m" ]
+    }
+    if (device_name == "rk3588_m") {
+      modules += [ "rk3588_m" ]
+    }
   }
 }
