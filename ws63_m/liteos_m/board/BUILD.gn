@@ -24,7 +24,6 @@ kernel_module(module_name) {
     "riscv_hal.c",
     "uart_porting.c",
     "watchdog_porting.c",
-    "ws63_timer.c",
   ]
 
   include_dirs = [
@@ -50,10 +49,14 @@ config("public") {
     "-nostartfiles",
     "-nostdlib",
     "-Wl,-T" + rebase_path("board.ld"),
-    "-Wl,--wrap=memset",
-    "-Wl,--wrap=memcpy",
     "-Wl,--whole-archive",
     rebase_path("//device/soc/hisilicon/ws63_m/sdk/tools/bin/compiler/riscv/cc_riscv32_musl_100/cc_riscv32_musl_fp/lib/gcc/riscv32-linux-musl/7.3.0/libgcc.a"),
     "-Wl,--no-whole-archive",
   ]
+
+  # The ws63 RISC-V (LinxCore131) I/D-cache maintenance implementation now
+  # ships as open source in arch/risc-v/src/linx131/los_cache.c (gated by
+  # LOSCFG_ARCH_CACHE), so the closed prebuilt liblos_cache.a is no longer
+  # linked here. The ArchICache*/ArchDCache* symbols resolve directly from
+  # the arch module.
 }

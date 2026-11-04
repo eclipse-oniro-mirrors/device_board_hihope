@@ -2,8 +2,8 @@
  * Copyright (c) 2024 HiSilicon (Shanghai) Technologies Co., Ltd.
  * Description: WS63 UART porting (adapted from 2.08.5 uart_porting.c)
  *
- * Provides UartPuts, sram_put_byte/get_byte, vsnprintf_s, memset_s, memcpy_s,
- * __wrap_memset, __wrap_memcpy — all pure hardware operations, no kernel API.
+ * Provides UartPuts, sram_put_byte/get_byte, vsnprintf_s, memset_s, memcpy_s —
+ * all pure hardware operations, no kernel API.
  */
 
 #include "los_compiler.h"
@@ -11,9 +11,18 @@
 #include "los_interrupt.h"
 #include "soc.h"
 #include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
 #ifdef LOSCFG_SHELL
 #include "los_task.h"
 #include "uart.h"
+#endif
+
+#ifdef LOSCFG_KERNEL_RAM_PRESET_TINY
+#define BOARD_PRINTF_BUF_SIZE 128
+#define BOARD_SPRINTF_MAX     512
+
+static char g_board_printf_buf[BOARD_PRINTF_BUF_SIZE];
 #endif
 
 void sram_put_byte(void *addr, uint8_t c)
@@ -211,24 +220,6 @@ __attribute__((weak)) int memcpy_s(void *dest, unsigned int destMax, const void 
     return 0;
 }
 
-void *__wrap_memset(void *dest, int c, unsigned int n)
-{
-    unsigned int i;
-    for (i = 0; i < n; i++) {
-        sram_put_byte((char *)dest + i, (uint8_t)c);
-    }
-    return dest;
-}
-
-void *__wrap_memcpy(void *dest, const void *src, unsigned int n)
-{
-    unsigned int i;
-    for (i = 0; i < n; i++) {
-        sram_put_byte((char *)dest + i, sram_get_byte((const char *)src + i));
-    }
-    return dest;
-}
-
 VOID UartPuts(const CHAR *s, UINT32 len, BOOL isLock)
 {
     UINT32 intSave = 0;
@@ -290,6 +281,212 @@ VOID HalConsoleOutput(LogModuleType type, INT32 level, const CHAR *fmt, ...)
         UartPuts(buf, (UINT32)len, UART_WITHOUT_LOCK);
     }
 }
+
+#ifdef LOSCFG_KERNEL_RAM_PRESET_TINY
+static int board_u2a(unsigned v, int base, int upper, char *buf)
+{
+    char tmp[8];
+    int i = 0;
+
+    if (v == 0) {
+        buf[0] = '0';
+        return 1;
+    }
+    while (v) {
+        int d = (int)(v % (unsigned)base);
+        tmp[i++] = (d < 10) ? (char)('0' + d) : (char)((upper ? 'A' : 'a') + d - 10);
+        v /= (unsigned)base;
+    }
+    int n = 0;
+    while (i > 0) {
+        buf[n++] = tmp[--i];
+    }
+    return n;
+}
+
+static int board_vsnprintf_s(char *strDest, size_t destMax,
+                             const char *format, va_list ap)
+{
+    if (strDest == NULL || destMax == 0) {
+        return 0;
+    }
+
+    size_t pos = 0;
+    const char *f = format;
+
+    while (*f != '\0' && pos < destMax - 1) {
+        if (*f != '%') {
+            strDest[pos++] = *f++;
+            continue;
+        }
+        f++;
+
+        int left = 0;
+        int alt = 0;
+        for (;;) {
+            if (*f == '-') {
+                left = 1;
+                f++;
+            } else if (*f == '#') {
+                alt = 1;
+                f++;
+            } else if (*f == '0' || *f == ' ' || *f == '+') {
+                f++;
+            } else {
+                break;
+            }
+        }
+
+        int width = 0;
+        while (*f >= '0' && *f <= '9') {
+            width = width * 10 + (*f - '0');
+            f++;
+        }
+        if (*f == '.') {
+            f++;
+            while (*f >= '0' && *f <= '9') {
+                f++;
+            }
+        }
+        while (*f == 'l' || *f == 'h' || *f == 'z' || *f == 'j' || *f == 't') {
+            f++;
+        }
+
+        char conv = *f;
+        if (conv != '\0') {
+            f++;
+        }
+
+        char body[16];
+        int blen = 0;
+        const char *str = body;
+        int slen = 0;
+
+        switch (conv) {
+            case '%':
+                body[0] = '%';
+                slen = 1;
+                break;
+            case 'c':
+                body[0] = (char)va_arg(ap, int);
+                slen = 1;
+                break;
+            case 's':
+                str = va_arg(ap, const char *);
+                if (str == NULL) {
+                    str = "(null)";
+                }
+                while (str[slen]) {
+                    slen++;
+                }
+                break;
+            case 'd':
+            case 'i': {
+                int v = va_arg(ap, int);
+                unsigned u;
+                if (v < 0) {
+                    body[blen++] = '-';
+                    u = (unsigned)(-v);
+                } else {
+                    u = (unsigned)v;
+                }
+                blen += board_u2a(u, 10, 0, body + blen);
+                slen = blen;
+                break;
+            }
+            case 'u':
+                blen = board_u2a(va_arg(ap, unsigned), 10, 0, body);
+                slen = blen;
+                break;
+            case 'x':
+            case 'X': {
+                unsigned v = va_arg(ap, unsigned);
+                if (alt) {
+                    body[blen++] = '0';
+                    body[blen++] = (conv == 'X') ? 'X' : 'x';
+                }
+                blen += board_u2a(v, 16, conv == 'X', body + blen);
+                slen = blen;
+                break;
+            }
+            case 'p': {
+                unsigned v = (unsigned)(uintptr_t)va_arg(ap, void *);
+                body[blen++] = '0';
+                body[blen++] = 'x';
+                blen += board_u2a(v, 16, 0, body + blen);
+                slen = blen;
+                break;
+            }
+            case 'o': {
+                unsigned v = va_arg(ap, unsigned);
+                if (alt && v != 0) {
+                    body[blen++] = '0';
+                }
+                blen += board_u2a(v, 8, 0, body + blen);
+                slen = blen;
+                break;
+            }
+            default:
+                body[0] = '%';
+                slen = 1;
+                if (conv) {
+                    body[1] = conv;
+                    slen = 2;
+                }
+                break;
+        }
+
+        int pad = width - slen;
+        if (pad < 0) {
+            pad = 0;
+        }
+        if (!left) {
+            while (pad > 0 && pos < destMax - 1) {
+                strDest[pos++] = ' ';
+                pad--;
+            }
+        }
+        for (int i = 0; i < slen && pos < destMax - 1; i++) {
+            strDest[pos++] = str[i];
+        }
+        if (left) {
+            while (pad > 0 && pos < destMax - 1) {
+                strDest[pos++] = ' ';
+                pad--;
+            }
+        }
+    }
+
+    strDest[pos] = '\0';
+    return (int)pos;
+}
+
+static int board_vprintf_to_uart(const char *fmt, va_list ap)
+{
+    int len = board_vsnprintf_s(g_board_printf_buf, BOARD_PRINTF_BUF_SIZE, fmt, ap);
+    if (len > 0) {
+        if ((unsigned int)len > BOARD_PRINTF_BUF_SIZE) {
+            len = BOARD_PRINTF_BUF_SIZE;
+        }
+        UartPuts(g_board_printf_buf, (UINT32)len, UART_WITHOUT_LOCK);
+    }
+    return len;
+}
+
+int printf(const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int len = board_vprintf_to_uart(fmt, ap);
+    va_end(ap);
+    return len;
+}
+
+int vsprintf(char *str, const char *fmt, va_list ap)
+{
+    return board_vsnprintf_s(str, BOARD_SPRINTF_MAX, fmt, ap);
+}
+#endif /* LOSCFG_KERNEL_RAM_PRESET_TINY */
 
 #ifdef LOSCFG_SHELL
 /*

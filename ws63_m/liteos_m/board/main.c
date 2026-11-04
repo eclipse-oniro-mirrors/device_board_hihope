@@ -17,6 +17,9 @@
 #include "soc.h"
 #include "pmp_init.h"
 #include "riscv_hal.h"
+#ifdef LOSCFG_ARCH_CACHE
+#include "arch/cache.h"
+#endif
 
 #ifdef LOSCFG_SHELL
 #include "show.h"
@@ -65,8 +68,20 @@ LITE_OS_SEC_TEXT_INIT INT32 main(VOID)
      */
     pmp_init();
 
+#ifdef LOSCFG_ARCH_CACHE
+    /* Cache init: flush ICache + DCache before enable, matching fbb_ws63
+     * cpu_cache_init. Use ArchDCacheFlush() (writeback+invalidate, safe for
+     * stack) instead of ArchDCacheInvalidate() (pure DCIV, no writeback —
+     * discards dirty stack saves at -Os). */
+    ArchICacheFlush();
+    ArchDCacheFlush();
+    ArchICacheEnable(CACHE_32KB);
+    ArchICachePrefetchEnable(CACHE_PREF_1_LINES);
+    ArchDCacheEnable(CACHE_4KB);
+#endif
+
     ws63_board_init();
-    PRINTK("WS63 ENTER MAIN\n");
+    dprintf("\nWS63 ENTER MAIN\n");
 
     ret = osKernelInitialize();
     if (ret != LOS_OK) {

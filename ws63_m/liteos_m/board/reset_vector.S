@@ -4,7 +4,7 @@
  *
  * Changes from 2.08.5:
  *   - TrapVector -> HalTrapVector (liteos_m trap entry)
- *   - FPU enable removed (no FPU for now)
+ *   - FPU enable restored (matches SDK 2.08.5; LOSCFG_ARCH_FPU_DISABLE not set)
  *   - Symbol names adapted: __stack_top__ -> __start_and_irq_stack_top,
  *     __data_load__/__data_begin__/__data_end__ -> __data_load_start/__data_start/__data_end,
  *     __bss_begin__/__bss_end__ -> __bss_start/__bss_end
@@ -45,6 +45,15 @@ reset_vector:
     /* 3. Clear mstatus / mie */
     csrwi   mstatus, 0
     csrwi   mie, 0
+
+    /* 3.5. Enable FPU (mstatus.FS = Dirty, clear fcsr) — required because
+     *      LOSCFG_ARCH_FPU_DISABLE is not set, so TaskContext contains FPU
+     *      registers and POP_ALL_REG executes flw/fscsr on task switch.
+     *      Without this, the first ArchStartToRun triggers an illegal
+     *      instruction trap. Matches SDK 2.08.5 reset_vector.S. */
+    li      t0, 0x00006000
+    csrs    mstatus, t0
+    fscsr   x0
 
     /* 4. Initialize global pointer and stack pointer */
     la      gp, _gp_

@@ -16,8 +16,10 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SDK="$(realpath "$SCRIPT_DIR/../../../../../soc/hisilicon/ws63_m/sdk")"
-CODE_ROOT="$(realpath "$SCRIPT_DIR/../../../../../../")"
+# readlink -m (not realpath): the liteos_m symlink shifts the relative base
+# from device/ to kernel/, so anchor SDK via CODE_ROOT instead.
+CODE_ROOT="$(readlink -m "$SCRIPT_DIR/../../../../../../")"
+SDK="$CODE_ROOT/device/soc/hisilicon/ws63_m/sdk"
 
 SIGN_CFG_DIR="$SDK/build/config/target_config/ws63/sign_config"
 SIGN_TOOL="$SDK/tools/bin/sign_tool/sign_tool_pltuni"
